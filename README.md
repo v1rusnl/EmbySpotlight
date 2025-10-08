@@ -14,7 +14,7 @@ A Spotlight banner for Emby Media Server
 
 ## Usage
 
- 1. Download Spotlight.js
+ 1. Download [Spotlight.js](https://github.com/v1rusnl/EmbySpotlight/blob/main/Spotlight.js)
  2. Change the following values to your needs
  
  a) limit variable (line 28) is for the amount of items from 50 latest the plugin shows in Spotlight in random order
