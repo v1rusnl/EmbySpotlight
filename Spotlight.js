@@ -16,7 +16,7 @@
  *       No border: "none"
  *       Emby accent color: "hsl(var(--theme-primary-color-hue), var(--theme-primary-color-saturation), var(--theme-primary-color-lightness))"
  *       Finimalism Inspired: "var(--theme-primary-color)"
- *    e) marginTop variable (line 32) controls the margin of the Spotlight to the top of the page -> Emby default themes = 9rem; Finimalism = 6rem
+ *    e) marginTop variable (line 32) controls the margin of the Spotlight to the top of the page -> Emby default themes = 9rem; Finimalism Inpsired = 6rem
  * 3. Paste modified Spotlight.js inside /system/dashboard-ui/
  * 4. Add <script src="Spotlight.js"></script> before </body> tag at the end of /system/dashboard-ui/index.html
  * 5. Clear Cache and hard reload Emby Web
