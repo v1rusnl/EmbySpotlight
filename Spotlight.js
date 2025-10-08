@@ -1,22 +1,29 @@
 /*!
  * Spotlight.js — Emby 4.9 compatible Spotlight slider
- * Source: built for sh0rty (10 items from random latest 50 items (Movies/TVShows))
- * Generated: 2025-10-07
+ * Source: built for sh0rty (10 items from random latest 50 items (Movies/TVShows)
+ * Generated: 2025-10-08
  * 
  * 1. Download Spotlight.js
  * 2. Change the following values to your needs
- *    a) limit variable (line 28) is for the amount of items from 50 latest the plugin shows in Spotlight in random order -> default = 10 items
- *    b) autoplayInterval variable (line 29) sets the amount of time how long an item is presented by Spotlight -> default = 8000ms (8s)
- *    c) backgroundColor variable (line 30) is for the gradient/vignette color at the inside edges of the spotlight and can be any supported value of: 
- *       HEX: "#0000000" -> Emby Themes: Dark = #1e1e1e; Black = #000000; Light = #ffffff; Finimalism Inspired = #090214; for other gradient themes like AppleTV or Blue Radiance take e.g. Windows Color Picker (WIN+SHIFT+C) and choose a color on the screen that makes you happy
- *    d) highlightColor variable (line 31) is for the border around the spotlight on hover and can be any supported value of: 
+ *    a) limit variable (line 35) is for the amount of items from 50 latest the plugin shows in Spotlight in random order -> default = 10 items
+ *    b) autoplayInterval variable (line 36) sets the amount of time how long an item is presented by Spotlight -> default = 8000ms (8s)
+ *    c) backgroundColor variable (line 37) is for the gradient/vignette color at the inside edges of the spotlight and can be any value, e.g.: 
+ *       HEX: "#0000000" -> Emby Themes: Dark = #1e1e1e; Black = #000000; Light = #ffffff; Finimalism = #090214; for other gradient themes like AppleTV or Blue Radiance take e.g. Windows Color Picker (WIN+SHIFT+C) and choose a color on the screen that makes you happy
+ *    d) frameColor variable (line 38) is for the frame border around the spotlight on hover and can be any valid value, e.g.: 
  *       HEX: "#0000000"
  *       rgb: "rgb(20 170 223)"
  *       rgba: "rgba(20 170 223, 0.2)"
  *       No border: "none"
  *       Emby accent color: "hsl(var(--theme-primary-color-hue), var(--theme-primary-color-saturation), var(--theme-primary-color-lightness))"
  *       Finimalism Inspired: "var(--theme-primary-color)"
- *    e) marginTop variable (line 32) controls the margin of the Spotlight to the top of the page -> Emby default themes = 9rem; Finimalism Inpsired = 6rem
+ *    e) marginTop variable (line 39) controls the margin of the Spotlight to the top of the page -> Emby default themes = 9rem; Finimalism Inspired = 6rem
+ *    f) playbuttonColor variable (line 40) controls the color of the play button when hovering over it and can be any valid value. e.g.:
+ *       HEX: "#0000000"
+ *       rgb: "rgb(20 170 223)"
+ *       rgba: "rgba(20 170 223, 0.2)"
+ *       No color: "none"
+ *       Emby accent color: "hsl(var(--theme-primary-color-hue), var(--theme-primary-color-saturation), var(--theme-primary-color-lightness))"
+ *       Finimalism Inspired: "var(--theme-primary-color)"
  * 3. Paste modified Spotlight.js inside /system/dashboard-ui/
  * 4. Add <script src="Spotlight.js"></script> before </body> tag at the end of /system/dashboard-ui/index.html
  * 5. Clear Cache and hard reload Emby Web
@@ -28,8 +35,9 @@
 		limit: 10,
         autoplayInterval: 8000,
         backgroundColor: "#000000",
-		highlightColor: "hsl(var(--theme-primary-color-hue), var(--theme-primary-color-saturation), var(--theme-primary-color-lightness))",
-		marginTop: "9rem"
+		frameColor: "hsl(var(--theme-primary-color-hue), var(--theme-primary-color-saturation), var(--theme-primary-color-lightness))",
+		marginTop: "9rem",
+		playbuttonColor: "hsl(var(--theme-primary-color-hue), var(--theme-primary-color-saturation), var(--theme-primary-color-lightness))"
     };
     
     const SPOTLIGHT_CONTAINER_ID = 'emby-spotlight-slider-container';
@@ -105,8 +113,9 @@
 		if (document.getElementById("spotlight-css-emby")) return;
 		
 		const bgColor = CONFIG.backgroundColor;
-		const highlightColor = CONFIG.highlightColor;
+		const frameColor = CONFIG.frameColor;
 		const marginTop = CONFIG.marginTop;
+		const playbuttonColor = CONFIG.playbuttonColor;
 		const rgb = hexToRgb(bgColor);
 		const rgbaColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 1)`;
 		
@@ -125,9 +134,54 @@
         box-shadow: 10px 10px 10px 0px rgba(0, 0, 0, 0.35);
 	}
 	.spotlight-container:hover {
-		box-shadow: 10px 10px 10px 0px rgba(0, 0, 0, 0.35), 0 0 2px 4px ${highlightColor};
+		box-shadow: 10px 10px 10px 0px rgba(0, 0, 0, 0.35), 0 0 2px 4px ${frameColor};
 		border-radius: 0.5rem;
     }
+	/* Play Button Styles */
+	.spotlight .play-button-overlay {
+		position: absolute;
+		top: 2rem;
+		right: 2rem;
+		z-index: 25;
+		opacity: 0;
+		transition: opacity 0.3s ease;
+		pointer-events: none;
+	}
+	.spotlight-container:hover .play-button-overlay {
+		opacity: 1;
+		pointer-events: all;
+	}
+	.spotlight .play-button {
+		width: 80px;
+		height: 80px;
+		border-radius: 50%;
+		background: rgba(55, 55, 55, 0.3);
+		border: none;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
+		transition: all 0.3s ease;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+	}
+	.spotlight .play-button:hover {
+		transform: scale(1.02);
+		background: ${playbuttonColor};
+		box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+	}
+	.spotlight .play-button svg {
+		width: 40px;
+		height: 40px;
+		fill: #ffffff;
+		margin-left: 6px;
+		position: relative;
+		left: -2px;
+		filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+		transition: filter 0.3s ease;
+	}
+	.spotlight .play-button:hover svg {
+		filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.5));
+	}
 	.spotlight { 
 		position: relative; 
 		overflow: visible;
@@ -275,10 +329,10 @@
 		z-index: 15;
 		filter: drop-shadow(0 6px 20px rgba(0,0,0,0.95)) drop-shadow(0 0 40px rgba(0,0,0,0.6));
 		pointer-events: none;
-		transition: transform 0.3s ease;
+		transition: transform 0.5s ease;
 	}
 	.spotlight-container:hover .banner-logo {
-        transform: translate(-50%, -50%) scale(1.05);
+        transform: translate(-50%, -50%) scale(1.1);
     }
 	.spotlight .banner-title { 
 		position: absolute; 
@@ -293,10 +347,10 @@
 		pointer-events: none;
 		text-align: center;
 		max-width: 80%;
-		transition: transform 0.3s ease;
+		transition: transform 0.5s ease;
 	}
 	.spotlight-container:hover .banner-title {
-        transform: translate(-50%, -50%) scale(1.05);
+        transform: translate(-50%, -50%) scale(1.1);
     }
 	.spotlight .banner-tagline {
 		position: absolute;
@@ -690,6 +744,22 @@
         spotlight.appendChild(btnLeft);
         spotlight.appendChild(btnRight);
         
+		// Play Button hinzufügen
+		const playButtonOverlay = document.createElement("div");
+		playButtonOverlay.className = "play-button-overlay";
+
+		const playButton = document.createElement("button");
+		playButton.className = "play-button";
+		playButton.setAttribute("aria-label", "Play");
+		playButton.innerHTML = `
+			<svg viewBox="0 0 24 24">
+				<path d="M8 5v14l11-7z"/>
+			</svg>
+		`;
+
+		playButtonOverlay.appendChild(playButton);
+		spotlight.appendChild(playButtonOverlay);
+
         const controls = document.createElement("div");
         controls.className = "controls";
         
@@ -706,8 +776,54 @@
         spotlight.appendChild(controls);
         container.appendChild(spotlight);
         
-        return { container, spotlight, slider, btnLeft, btnRight, controls, sliderWrapper };
+        return { container, spotlight, slider, btnLeft, btnRight, controls, sliderWrapper, playButtonOverlay };
     }
+
+	function playItem(itemId, serverId, apiClient) {
+		console.log("[Spotlight] Starte Wiedergabe für Item:", itemId, "ServerId:", serverId);
+		
+		let serverIdToUse = serverId;
+		
+		if (!serverIdToUse && apiClient) {
+			if (apiClient.serverId) {
+				serverIdToUse = apiClient.serverId;
+			} else if (apiClient.serverInfo && apiClient.serverInfo.Id) {
+				serverIdToUse = apiClient.serverInfo.Id;
+			} else if (apiClient._serverInfo && apiClient._serverInfo.Id) {
+				serverIdToUse = apiClient._serverInfo.Id;
+			}
+		}
+		
+		// Versuche MediaController zu verwenden
+		if (window.require) {
+			try {
+				window.require(['playbackManager'], function(playbackManager) {
+					if (playbackManager && typeof playbackManager.play === 'function') {
+						console.log("[Spotlight] Verwende playbackManager.play");
+						playbackManager.play({
+							ids: [itemId],
+							serverId: serverIdToUse
+						});
+						return;
+					}
+				});
+				return;
+			} catch (e) {
+				console.warn("[Spotlight] playbackManager nicht verfügbar", e);
+			}
+		}
+		
+		// Fallback: Navigation zur Item-Seite mit Autoplay
+		if (window.appRouter && typeof window.appRouter.showItem === "function") {
+			console.log("[Spotlight] Fallback: Navigation zu Item mit Autoplay");
+			window.appRouter.showItem(itemId, serverIdToUse);
+			// Versuche nach Navigation Autoplay zu triggern
+			setTimeout(() => {
+				const playButton = document.querySelector('.btnPlay');
+				if (playButton) playButton.click();
+			}, 500);
+		}
+	}
     
     function navigateToItem(itemId, serverId, apiClient) {
         let serverIdToUse = serverId;
@@ -926,6 +1042,23 @@
             }
         });
         
+		// Play Button Click Handler
+		const playButtonOverlay = spotlight.querySelector('.play-button-overlay');
+		if (playButtonOverlay) {
+			playButtonOverlay.addEventListener("click", (e) => {
+				e.stopPropagation();
+				
+				// Finde das aktuell sichtbare Item
+				const visibleItem = slider.children[currentIndex];
+				if (visibleItem && visibleItem.dataset?.itemId) {
+					const itemId = visibleItem.dataset.itemId;
+					const serverId = visibleItem.dataset.serverId;
+					console.log("[Spotlight] Play Button geklickt für Item:", itemId);
+					playItem(itemId, serverId, apiClient);
+				}
+			});
+		}
+		
         const bannerItems = slider.querySelectorAll('.banner-item');
         bannerItems.forEach(item => {
             item.style.cursor = 'pointer';
