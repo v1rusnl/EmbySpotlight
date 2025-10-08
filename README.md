@@ -29,11 +29,11 @@ A Spotlight banner for Emby Media Server
  default = 8000ms (8s)
  ```
 
- c) backgroundColor variable (line 30) is for the gradient/vignette color at the inside edges of the spotlight and can be any value, e.g.: 
+ c) backgroundColor variable (line 30) is for the gradient/vignette color at the inside edges of the spotlight and can be any supported value of: 
 ```
 HEX: "#0000000" -> Emby Themes: Dark = #1e1e1e; Black = #000000; Light = #ffffff; Finimalism inspired = #090214; for other gradient themes like AppleTV or Blue Radiance take e.g. Windows Color Picker (WIN+SHIFT+C) and choose a color on the screen that makes you happy
 ```
- d) highlightColor variable (line 31) is for the border around the spotlight on hover and can be any valid value, e.g.: 
+ d) highlightColor variable (line 31) is for the border around the spotlight on hover and can be any supported value of: 
  ```
  HEX: "#0000000"
  rgb: "rgb(20 170 223)"
