@@ -26,7 +26,7 @@
     const CONFIG = {
         imageWidth: 1900,
 		limit: 10,
-        autoplayInterval: 6000,
+        autoplayInterval: 8000,
         backgroundColor: "#000000",
 		highlightColor: "hsl(var(--theme-primary-color-hue), var(--theme-primary-color-saturation), var(--theme-primary-color-lightness))",
 		marginTop: "9rem"
