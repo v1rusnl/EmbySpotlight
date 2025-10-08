@@ -3,6 +3,9 @@
 
 A Spotlight banner for Emby Media Server
 
+<img width="1000" height="305" alt="image" src="https://github.com/user-attachments/assets/8773a87d-8764-4190-a887-812da504b857" />
+
+
 
 ### First and foremost:
 - This is vibe-coded with the help of Claude Sonnet 4.5 and just a proof of concept
