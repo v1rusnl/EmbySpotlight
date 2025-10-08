@@ -55,4 +55,4 @@ HEX: "#0000000" -> Emby Themes: Dark = #1e1e1e; Black = #000000; Light = #ffffff
     
 ## License
 
-[MIT](https://choosealicense.com/licenses/mit/)
+[MIT](https://github.com/v1rusnl/EmbySpotlight/blob/main/LICENSE)
