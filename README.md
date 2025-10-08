@@ -50,7 +50,7 @@ HEX: "#0000000" -> Emby Themes: Dark = #1e1e1e; Black = #000000; Light = #ffffff
 
  3. Paste modified Spotlight.js inside /system/dashboard-ui/
  4. Add ```<script src="Spotlight.js"></script>``` before ```</body>``` tag at the end of /system/dashboard-ui/index.html
-
+<img width="429" height="81" alt="Screenshot 2025-10-05 155428" src="https://github.com/user-attachments/assets/10f18d01-a610-45b4-bb79-7c895204023d" />
  5. Clear Cache and hard reload Emby Web
     
 ## License
