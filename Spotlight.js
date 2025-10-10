@@ -1,7 +1,7 @@
 /*!
  * Spotlight.js — Emby 4.9 compatible Spotlight slider
- * Source: built for sh0rty (10 items from random latest 50 items (Movies/TVShows or manual selection via spotlight-items.txt)
- * Generated: 2025-10-10
+ * Source: built for sh0rty (10 items from random latest 100 items (Movies/TVShows)
+ * Generated: 2025-10-08
  */
 (function () {
     'use strict';
@@ -304,11 +304,16 @@
         object-fit: contain;
         z-index: 15;
         filter: drop-shadow(0 6px 20px rgba(0,0,0,0.95)) drop-shadow(0 0 40px rgba(0,0,0,0.6));
-        pointer-events: none;
-        transition: transform 0.5s ease;
+        pointer-events: auto;
+        cursor: pointer;
+        transition: transform 0.5s ease, opacity 0.3s ease;
     }
     .spotlight-container:hover .banner-logo {
         transform: translate(-50%, -50%) scale(1.1);
+    }
+    .spotlight .banner-logo.hidden {
+        opacity: 0;
+        pointer-events: none;
     }
     .spotlight .banner-title { 
         position: absolute; 
@@ -320,14 +325,47 @@
         font-weight: 700; 
         color: #fff;
         text-shadow: 2px 2px 8px rgba(0,0,0,0.9);
-        pointer-events: none;
+        pointer-events: auto;
+        cursor: pointer;
         text-align: center;
         max-width: 80%;
-        transition: transform 0.5s ease;
+        transition: transform 0.5s ease, opacity 0.3s ease;
     }
     .spotlight-container:hover .banner-title {
         transform: translate(-50%, -50%) scale(1.1);
     }
+    .spotlight .banner-title.hidden {
+        opacity: 0;
+        pointer-events: none;
+    }
+	.spotlight .banner-overview {
+		position: absolute;
+		left: 50%;
+		top: 45%;
+		transform: translate(-50%, -50%);
+		z-index: 16;
+		max-width: 70%;
+		padding: 0;
+		background: none;
+		opacity: 0;
+		pointer-events: none;
+		cursor: pointer;
+		transition: opacity 0.3s ease;
+	}
+    .spotlight .banner-overview.visible {
+        opacity: 1;
+        pointer-events: auto;
+    }
+	.spotlight .banner-overview-text {
+		font-size: clamp(1.1rem, 1.8vw, 1.4rem);
+		color: rgba(255,255,255,0.9);
+		text-shadow: 2px 2px 8px rgba(0,0,0,0.99), 0 0 20px rgba(0,0,0,0.9);
+		font-weight: 500;
+		line-height: 1.6;
+		text-align: center;
+		max-height: 40vh;
+		overflow-y: auto;
+	}
     .spotlight .banner-tagline {
         position: absolute;
         left: 50%;
@@ -341,6 +379,10 @@
         pointer-events: none;
         text-align: center;
         max-width: 60%;
+        transition: opacity 0.3s ease;
+    }
+    .spotlight .banner-tagline.hidden {
+        opacity: 0;
     }
     @media (max-width: 1500px) {
         .spotlight .banner-tagline {
@@ -480,7 +522,7 @@
             EnableImageTypes: "Primary,Backdrop,Thumb,Logo,Banner",
             EnableUserData: false,
             EnableTotalRecordCount: false,
-            Fields: "PrimaryImageAspectRatio,BackdropImageTags,ImageTags,ParentLogoImageTag,ParentLogoItemId,CriticRating,CommunityRating,OfficialRating,PremiereDate,ProductionYear,Genres,RunTimeTicks,Taglines"
+            Fields: "PrimaryImageAspectRatio,BackdropImageTags,ImageTags,ParentLogoImageTag,ParentLogoItemId,CriticRating,CommunityRating,OfficialRating,PremiereDate,ProductionYear,Genres,RunTimeTicks,Taglines,Overview"
         };
         return q;
     }
@@ -526,7 +568,6 @@
         try {
             const response = await fetch(CONFIG.customItemsFile);
             
-            // Wenn Datei nicht existiert (404), return null
             if (!response.ok) {
                 if (response.status === 404) {
                     console.log("[Spotlight] Custom items file nicht gefunden, verwende Standard-Modus");
@@ -537,13 +578,11 @@
             
             const text = await response.text();
             
-            // Parse die Datei: Eine Item-ID pro Zeile, ignoriere Leerzeilen und Kommentare
-            // Emby IDs können numerisch oder alphanumerisch sein
             const itemIds = text
                 .split('\n')
                 .map(line => line.trim())
                 .filter(line => line.length > 0 && !line.startsWith('#'))
-                .filter(line => /^[a-zA-Z0-9]+$/.test(line)); // Alphanumerische IDs
+                .filter(line => /^[a-zA-Z0-9]+$/.test(line));
             
             if (itemIds.length === 0) {
                 console.warn("[Spotlight] Custom items file ist leer oder enthält keine gültigen IDs");
@@ -571,14 +610,30 @@
             const items = [];
             const userId = apiClient.getCurrentUserId();
             
-            // Hole Items einzeln
             for (const itemId of itemIds) {
                 try {
                     console.log(`[Spotlight] Lade Item: ${itemId}`);
                     const item = await apiClient.getItem(userId, itemId);
+                    
                     if (item) {
-                        console.log(`[Spotlight] Item erfolgreich geladen: ${item.Name} (${itemId})`);
-                        items.push(item);
+                        if (item.Type === "BoxSet" || item.CollectionType === "boxsets") {
+                            console.log(`[Spotlight] Item ${itemId} ist eine Collection, lade Items daraus...`);
+                            
+                            const collectionItems = await apiClient.getItems(userId, {
+                                ParentId: itemId,
+                                Recursive: true,
+                                IncludeItemTypes: "Movie,Series",
+                                Fields: "PrimaryImageAspectRatio,BackdropImageTags,ImageTags,ParentLogoImageTag,ParentLogoItemId,CriticRating,CommunityRating,OfficialRating,PremiereDate,ProductionYear,Genres,RunTimeTicks,Taglines,Overview"
+                            });
+                            
+                            if (collectionItems && collectionItems.Items) {
+                                items.push(...collectionItems.Items);
+                                console.log(`[Spotlight] ${collectionItems.Items.length} Items aus Collection geladen`);
+                            }
+                        } else {
+                            console.log(`[Spotlight] Item erfolgreich geladen: ${item.Name} (${itemId})`);
+                            items.push(item);
+                        }
                     } else {
                         console.warn(`[Spotlight] Item ${itemId} nicht gefunden (null zurückgegeben)`);
                     }
@@ -587,7 +642,7 @@
                 }
             }
             
-            console.log(`[Spotlight] ${items.length} von ${itemIds.length} Custom Items erfolgreich geladen`);
+            console.log(`[Spotlight] Gesamt ${items.length} Items geladen`);
             return items;
             
         } catch (error) {
@@ -597,29 +652,21 @@
     }
     
     async function fetchItems(apiClient) {
-        // Versuche zuerst Custom Items zu laden
         const customItemIds = await loadCustomItemsList();
         
         if (customItemIds && customItemIds.length > 0) {
-            // Custom Items Modus
             console.log("[Spotlight] Custom Items Modus aktiv");
             const items = await fetchItemsByIds(apiClient, customItemIds);
             
             if (items.length === 0) {
                 console.warn("[Spotlight] Keine Custom Items geladen, falle zurück auf Standard-Modus");
-                // Fallback auf Standard-Modus wenn keine Items geladen werden konnten
                 return fetchStandardItems(apiClient);
             }
-            
-            // Shuffeln und limitieren (optional, da Custom Items meist gezielt sind)
-            // Wenn du die Reihenfolge aus der Datei beibehalten willst, entferne das Shuffeln:
-            // return items.slice(0, Math.min(CONFIG.limit, items.length));
             
             const shuffledItems = shuffleArray(items);
             return shuffledItems.slice(0, Math.min(CONFIG.limit, shuffledItems.length));
         }
         
-        // Standard-Modus (wenn keine Custom Items Liste existiert)
         console.log("[Spotlight] Standard-Modus aktiv");
         return fetchStandardItems(apiClient);
     }
@@ -644,7 +691,6 @@
         const infoContainer = document.createElement("div");
         infoContainer.className = "banner-info";
         
-        // Genres (max 3) - darüber
         if (item.Genres && item.Genres.length > 0) {
             const genresDiv = document.createElement("div");
             genresDiv.className = "banner-genres";
@@ -658,11 +704,9 @@
             infoContainer.appendChild(genresDiv);
         }
         
-        // Meta-Informationen (Jahr, Laufzeit, Ratings) - in dieser Reihenfolge
         const metaDiv = document.createElement("div");
         metaDiv.className = "banner-meta";
         
-        // Jahr ZUERST
         if (item.ProductionYear) {
             const yearSpan = document.createElement("span");
             yearSpan.className = "banner-meta-item";
@@ -670,7 +714,6 @@
             metaDiv.appendChild(yearSpan);
         }
         
-        // Rotten Tomatoes Rating
         if (item.CriticRating !== null && item.CriticRating !== undefined) {
             const rtRating = document.createElement("div");
             rtRating.className = "meta-rating-item banner-meta-item";
@@ -684,7 +727,6 @@
             metaDiv.appendChild(rtRating);
         }
         
-        // IMDb Rating
         if (item.CommunityRating) {
             const imdbRating = document.createElement("div");
             imdbRating.className = "meta-rating-item banner-meta-item";
@@ -697,7 +739,6 @@
             metaDiv.appendChild(imdbRating);
         }
         
-        // Laufzeit
         if (item.RunTimeTicks) {
             const runtimeMinutes = Math.round(item.RunTimeTicks / 600000000);
             const runtimeSpan = document.createElement("span");
@@ -758,12 +799,24 @@
             div.appendChild(title);
         }
         
-        // Tagline hinzufügen
         if (item.Taglines && item.Taglines.length > 0) {
             const tagline = document.createElement("div");
             tagline.className = "banner-tagline";
             tagline.textContent = item.Taglines[0];
             div.appendChild(tagline);
+        }
+        
+        // Overview Element hinzufügen
+        if (item.Overview) {
+            const overviewContainer = document.createElement("div");
+            overviewContainer.className = "banner-overview";
+            
+            const overviewText = document.createElement("div");
+            overviewText.className = "banner-overview-text";
+            overviewText.textContent = item.Overview;
+            
+            overviewContainer.appendChild(overviewText);
+            div.appendChild(overviewContainer);
         }
         
         const info = createInfoElement(item);
@@ -829,7 +882,6 @@
         spotlight.appendChild(btnLeft);
         spotlight.appendChild(btnRight);
         
-        // Play Button hinzufügen
         const playButtonOverlay = document.createElement("div");
         playButtonOverlay.className = "play-button-overlay";
         const playButton = document.createElement("button");
@@ -842,6 +894,7 @@
         `;
         playButtonOverlay.appendChild(playButton);
         spotlight.appendChild(playButtonOverlay);
+        
         const controls = document.createElement("div");
         controls.className = "controls";
         
@@ -860,6 +913,7 @@
         
         return { container, spotlight, slider, btnLeft, btnRight, controls, sliderWrapper, playButtonOverlay };
     }
+    
     function playItem(itemId, serverId, apiClient) {
         console.log("[Spotlight] Starte Wiedergabe für Item:", itemId, "ServerId:", serverId);
         
@@ -875,7 +929,6 @@
             }
         }
         
-        // Versuche MediaController zu verwenden
         if (window.require) {
             try {
                 window.require(['playbackManager'], function(playbackManager) {
@@ -894,11 +947,9 @@
             }
         }
         
-        // Fallback: Navigation zur Item-Seite mit Autoplay
         if (window.appRouter && typeof window.appRouter.showItem === "function") {
             console.log("[Spotlight] Fallback: Navigation zu Item mit Autoplay");
             window.appRouter.showItem(itemId, serverIdToUse);
-            // Versuche nach Navigation Autoplay zu triggern
             setTimeout(() => {
                 const playButton = document.querySelector('.btnPlay');
                 if (playButton) playButton.click();
@@ -1069,43 +1120,110 @@
             animate();
         });
         
-        controls.addEventListener("click", (e) => {
-            e.stopPropagation();
-            if (e.target.classList.contains("control")) {
-                const idx = parseInt(e.target.dataset.index, 10);
-                currentIndex = idx;
-                updateTransform(currentIndex, true);
-                setActiveDot(currentIndex);
-                saveCurrentIndex();
-                setTimeout(() => triggerZoomAnimation(), 100);
-            }
-        });
+		controls.addEventListener("click", (e) => {
+			e.stopPropagation();
+			if (e.target.classList.contains("control")) {
+				// Reset alle Overview-Anzeigen
+				const allBannerItems = slider.querySelectorAll('.banner-item');
+				allBannerItems.forEach(item => {
+					const overview = item.querySelector('.banner-overview');
+					const logo = item.querySelector('.banner-logo');
+					const title = item.querySelector('.banner-title');
+					const tagline = item.querySelector('.banner-tagline');
+					
+					if (overview) overview.classList.remove('visible');
+					if (logo) logo.classList.remove('hidden');
+					if (title) title.classList.remove('hidden');
+					if (tagline) tagline.classList.remove('hidden');
+				});
+				
+				const idx = parseInt(e.target.dataset.index, 10);
+				currentIndex = idx;
+				updateTransform(currentIndex, true);
+				setActiveDot(currentIndex);
+				saveCurrentIndex();
+				setTimeout(() => triggerZoomAnimation(), 100);
+			}
+		});
         
-        function animate() {
-            updateTransform(currentIndex, true);
-            setActiveDot(currentIndex);
-            saveCurrentIndex();
-            setTimeout(() => triggerZoomAnimation(), 100);
-            
-            setTimeout(() => {
-                if (currentIndex === 0) {
-                    currentIndex = itemsCount;
-                    updateTransform(currentIndex, false);
-                    setActiveDot(currentIndex);
-                    saveCurrentIndex();
-                    setTimeout(() => triggerZoomAnimation(), 100);
-                } else if (currentIndex === itemsCount + 1) {
-                    currentIndex = 1;
-                    updateTransform(currentIndex, false);
-                    setActiveDot(currentIndex);
-                    saveCurrentIndex();
-                    setTimeout(() => triggerZoomAnimation(), 100);
-                }
-            }, 520);
-        }
+	function animate() {
+		// Reset alle Overview-Anzeigen beim Wechseln
+		const allBannerItems = slider.querySelectorAll('.banner-item');
+		allBannerItems.forEach(item => {
+			const overview = item.querySelector('.banner-overview');
+			const logo = item.querySelector('.banner-logo');
+			const title = item.querySelector('.banner-title');
+			const tagline = item.querySelector('.banner-tagline');
+			
+			if (overview) overview.classList.remove('visible');
+			if (logo) logo.classList.remove('hidden');
+			if (title) title.classList.remove('hidden');
+			if (tagline) tagline.classList.remove('hidden');
+		});
+		
+		updateTransform(currentIndex, true);
+		setActiveDot(currentIndex);
+		saveCurrentIndex();
+		setTimeout(() => triggerZoomAnimation(), 100);
+		
+		setTimeout(() => {
+			if (currentIndex === 0) {
+				currentIndex = itemsCount;
+				updateTransform(currentIndex, false);
+				setActiveDot(currentIndex);
+				saveCurrentIndex();
+				setTimeout(() => triggerZoomAnimation(), 100);
+			} else if (currentIndex === itemsCount + 1) {
+				currentIndex = 1;
+				updateTransform(currentIndex, false);
+				setActiveDot(currentIndex);
+				saveCurrentIndex();
+				setTimeout(() => triggerZoomAnimation(), 100);
+			}
+		}, 520);
+	}
         
         slider.addEventListener("click", (e) => {
-            if (e.target.closest('.arrow') || e.target.closest('.controls')) {
+            if (e.target.closest('.arrow') || e.target.closest('.controls') || e.target.closest('.play-button-overlay')) {
+                return;
+            }
+            
+            // Overview Toggle
+            const overviewElement = e.target.closest('.banner-overview');
+            const logoElement = e.target.closest('.banner-logo');
+            const titleElement = e.target.closest('.banner-title');
+            
+            if (overviewElement) {
+                // Klick auf Overview - verstecke Overview, zeige Logo/Title
+                const bannerItem = overviewElement.closest('.banner-item');
+                const overview = bannerItem.querySelector('.banner-overview');
+                const logo = bannerItem.querySelector('.banner-logo');
+                const title = bannerItem.querySelector('.banner-title');
+                const tagline = bannerItem.querySelector('.banner-tagline');
+                
+                if (overview) overview.classList.remove('visible');
+                if (logo) logo.classList.remove('hidden');
+                if (title) title.classList.remove('hidden');
+                if (tagline) tagline.classList.remove('hidden');
+                
+                return;
+            }
+            
+            if (logoElement || titleElement) {
+                // Klick auf Logo oder Title - zeige Overview
+                const bannerItem = (logoElement || titleElement).closest('.banner-item');
+                const overview = bannerItem.querySelector('.banner-overview');
+                const logo = bannerItem.querySelector('.banner-logo');
+                const title = bannerItem.querySelector('.banner-title');
+                const tagline = bannerItem.querySelector('.banner-tagline');
+                
+                if (overview) {
+                    overview.classList.add('visible');
+                    if (logo) logo.classList.add('hidden');
+                    if (title) title.classList.add('hidden');
+                    if (tagline) tagline.classList.add('hidden');
+                }
+                
                 return;
             }
             
@@ -1122,7 +1240,6 @@
             }
         });
         
-        // Play Button Click Handler
         const playButtonOverlay = spotlight.querySelector('.play-button-overlay');
         if (playButtonOverlay) {
             playButtonOverlay.addEventListener("click", (e) => {

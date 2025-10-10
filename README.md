@@ -15,12 +15,12 @@ A Spotlight banner for Emby Media Server
 - This Banner just works on the Web Client
 
 
-## Usage
+## Installation
 
  1. Download [Spotlight.js](https://github.com/v1rusnl/EmbySpotlight/blob/main/Spotlight.js) and optionally [spotlight-items.txt](https://github.com/v1rusnl/EmbySpotlight/blob/main/spotlight-items.txt), if you want to decide which items you want to present
  2. Change the following values in Spotlight.js to your needs
  
- a) limit variable (line 10) is for the amount of items from 50 latest the plugin shows in Spotlight in random order
+ a) limit variable (line 10) is for the amount of items from 100 latest the plugin shows in Spotlight in random order
  
  ```
  default = 10 items
@@ -75,6 +75,13 @@ HEX: "#0000000" -> Emby Themes: Dark = #1e1e1e; Black = #000000; Light = #ffffff
 <img width="429" height="81" alt="Screenshot 2025-10-05 155428" src="https://github.com/user-attachments/assets/10f18d01-a610-45b4-bb79-7c895204023d" />
  
  6. Clear Cache and hard reload Emby Web
+
+## Usage
+ - Spotlight Banner switches between items automatically in the set up time frame (default 8s)
+ - Hover over the Banner to see the Play-Button and click it to watch the item
+ - Click the Logoart to see the Plot overview, click the Plot overview to see the Logo again (switches automatically back to logo when changing item)
+ - Use the Left-/Right-Arrows to jump between items
+
     
 ## License
 
