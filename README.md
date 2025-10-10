@@ -67,7 +67,8 @@ HEX: "#0000000" -> Emby Themes: Dark = #1e1e1e; Black = #000000; Light = #ffffff
  ```
  
  3. Optional: Add IDs of the items you want to present into potlight-items.txt like this:
- 
+ <img width="326" height="155" alt="image" src="https://github.com/user-attachments/assets/6f48bf50-7477-4378-af0c-6f4f1f9064ee" />
+
  4. Paste modified Spotlight.js and optional spotlight-items.txt inside /system/dashboard-ui/
  
  5. Add ```<script src="Spotlight.js"></script>``` before ```</body>``` tag at the end of /system/dashboard-ui/index.html
