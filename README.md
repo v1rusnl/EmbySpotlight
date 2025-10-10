@@ -3,9 +3,7 @@
 
 A Spotlight banner for Emby Media Server
 
-<img width="1000" height="304" alt="Screenshot 2025-10-08 074242" src="https://github.com/user-attachments/assets/ec29913a-85e5-4a5e-8f86-e580e643b244" />
-
-<img width="1000" height="340" alt="Screenshot 2025-10-08 122744" src="https://github.com/user-attachments/assets/7856701a-c064-413e-b6c5-d5859258aa2d" />
+https://github.com/user-attachments/assets/268efab0-483d-4743-be19-894baa4ec022
 
 
 
