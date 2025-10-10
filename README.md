@@ -17,28 +17,28 @@ A Spotlight banner for Emby Media Server
 
 ## Usage
 
- 1. Download [Spotlight.js](https://github.com/v1rusnl/EmbySpotlight/blob/main/Spotlight.js)
- 2. Change the following values to your needs
+ 1. Download [Spotlight.js](https://github.com/v1rusnl/EmbySpotlight/blob/main/Spotlight.js) and optionally [spotlight-items.txt](https://github.com/v1rusnl/EmbySpotlight/blob/main/spotlight-items.txt)
+ 2. Change the following values in Spotlight.js to your needs
  
- a) limit variable (line 35) is for the amount of items from 50 latest the plugin shows in Spotlight in random order
+ a) limit variable (line 10) is for the amount of items from 50 latest the plugin shows in Spotlight in random order
  
  ```
  default = 10 items
  ```
 
- b) autoplayInterval variable (line 36) sets the amount of time how long an item is presented by Spotlight
+ b) autoplayInterval variable (line 11) sets the amount of time how long an item is presented by Spotlight
 
  ```
  default = 8000ms (8s)
  ```
 
- c) backgroundColor variable (line 37) is for the gradient/vignette color at the inside edges of the spotlight and can be any supported value of: 
+ c) backgroundColor variable (line 12) is for the gradient/vignette color at the inside edges of the spotlight and can be any supported value of: 
  
 ```
 HEX: "#0000000" -> Emby Themes: Dark = #1e1e1e; Black = #000000; Light = #ffffff; Finimalism inspired = #090214; for other gradient themes like AppleTV or Blue Radiance take e.g. Windows Color Picker (WIN+SHIFT+C) and choose a color on the screen that makes you happy
 ```
 
- d) highlightColor variable (line 38) is for the border around the spotlight on hover and can be any valid value. e.g.: 
+ d) highlightColor variable (line 13) is for the border around the spotlight on hover and can be any valid value. e.g.: 
  
  ```
  HEX: "#0000000"
@@ -49,13 +49,13 @@ HEX: "#0000000" -> Emby Themes: Dark = #1e1e1e; Black = #000000; Light = #ffffff
  Finimalism Inspired: "var(--theme-primary-color)"
  ```
  
- e) marginTop variable (line 39) controls the margin of the Spotlight to the top of the page
+ e) marginTop variable (line 14) controls the margin of the Spotlight to the top of the page
 
  ```
  Emby default themes = 9rem; Finimalism Inspired = 6rem
  ```
  
- f) playbuttonColor variable (line 40) controls the color of the play button when hovering over it and can be any valid value. e.g.:
+ f) playbuttonColor variable (line 15) controls the color of the play button when hovering over it and can be any valid value. e.g.:
  
  ```
  HEX: "#0000000"
@@ -66,12 +66,14 @@ HEX: "#0000000" -> Emby Themes: Dark = #1e1e1e; Black = #000000; Light = #ffffff
  Finimalism Inspired: "var(--theme-primary-color)"
  ```
  
- 3. Paste modified Spotlight.js inside /system/dashboard-ui/
+ 3. Optional: Add IDs of the items you want to present into potlight-items.txt like this:
  
- 4. Add ```<script src="Spotlight.js"></script>``` before ```</body>``` tag at the end of /system/dashboard-ui/index.html
+ 4. Paste modified Spotlight.js and optional spotlight-items.txt inside /system/dashboard-ui/
+ 
+ 5. Add ```<script src="Spotlight.js"></script>``` before ```</body>``` tag at the end of /system/dashboard-ui/index.html
 <img width="429" height="81" alt="Screenshot 2025-10-05 155428" src="https://github.com/user-attachments/assets/10f18d01-a610-45b4-bb79-7c895204023d" />
  
- 5. Clear Cache and hard reload Emby Web
+ 6. Clear Cache and hard reload Emby Web
     
 ## License
 

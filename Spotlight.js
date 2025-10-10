@@ -1,43 +1,19 @@
 /*!
  * Spotlight.js — Emby 4.9 compatible Spotlight slider
- * Source: built for sh0rty (10 items from random latest 50 items (Movies/TVShows)
- * Generated: 2025-10-08
- * 
- * 1. Download Spotlight.js
- * 2. Change the following values to your needs
- *    a) limit variable (line 35) is for the amount of items from 50 latest the plugin shows in Spotlight in random order -> default = 10 items
- *    b) autoplayInterval variable (line 36) sets the amount of time how long an item is presented by Spotlight -> default = 8000ms (8s)
- *    c) backgroundColor variable (line 37) is for the gradient/vignette color at the inside edges of the spotlight and can be any value, e.g.: 
- *       HEX: "#0000000" -> Emby Themes: Dark = #1e1e1e; Black = #000000; Light = #ffffff; Finimalism = #090214; for other gradient themes like AppleTV or Blue Radiance take e.g. Windows Color Picker (WIN+SHIFT+C) and choose a color on the screen that makes you happy
- *    d) frameColor variable (line 38) is for the frame border around the spotlight on hover and can be any valid value, e.g.: 
- *       HEX: "#0000000"
- *       rgb: "rgb(20 170 223)"
- *       rgba: "rgba(20 170 223, 0.2)"
- *       No border: "none"
- *       Emby accent color: "hsl(var(--theme-primary-color-hue), var(--theme-primary-color-saturation), var(--theme-primary-color-lightness))"
- *       Finimalism Inspired: "var(--theme-primary-color)"
- *    e) marginTop variable (line 39) controls the margin of the Spotlight to the top of the page -> Emby default themes = 9rem; Finimalism Inspired = 6rem
- *    f) playbuttonColor variable (line 40) controls the color of the play button when hovering over it and can be any valid value. e.g.:
- *       HEX: "#0000000"
- *       rgb: "rgb(20 170 223)"
- *       rgba: "rgba(20 170 223, 0.2)"
- *       No color: "none"
- *       Emby accent color: "hsl(var(--theme-primary-color-hue), var(--theme-primary-color-saturation), var(--theme-primary-color-lightness))"
- *       Finimalism Inspired: "var(--theme-primary-color)"
- * 3. Paste modified Spotlight.js inside /system/dashboard-ui/
- * 4. Add <script src="Spotlight.js"></script> before </body> tag at the end of /system/dashboard-ui/index.html
- * 5. Clear Cache and hard reload Emby Web
+ * Source: built for sh0rty (10 items from random latest 50 items (Movies/TVShows or manual selection via spotlight-items.txt)
+ * Generated: 2025-10-10
  */
 (function () {
     'use strict';
     const CONFIG = {
         imageWidth: 1900,
-		limit: 10,
+        limit: 10,
         autoplayInterval: 8000,
         backgroundColor: "#000000",
-		frameColor: "hsl(var(--theme-primary-color-hue), var(--theme-primary-color-saturation), var(--theme-primary-color-lightness))",
-		marginTop: "9rem",
-		playbuttonColor: "hsl(var(--theme-primary-color-hue), var(--theme-primary-color-saturation), var(--theme-primary-color-lightness))"
+        frameColor: "hsl(var(--theme-primary-color-hue), var(--theme-primary-color-saturation), var(--theme-primary-color-lightness))",
+        marginTop: "9rem",
+        playbuttonColor: "hsl(var(--theme-primary-color-hue), var(--theme-primary-color-saturation), var(--theme-primary-color-lightness))",
+        customItemsFile: "spotlight-items.txt"
     };
     
     const SPOTLIGHT_CONTAINER_ID = 'emby-spotlight-slider-container';
@@ -109,405 +85,405 @@
         return `${mins}min`;
     }
    
-	function insertStyles() {
-		if (document.getElementById("spotlight-css-emby")) return;
-		
-		const bgColor = CONFIG.backgroundColor;
-		const frameColor = CONFIG.frameColor;
-		const marginTop = CONFIG.marginTop;
-		const playbuttonColor = CONFIG.playbuttonColor;
-		const rgb = hexToRgb(bgColor);
-		const rgbaColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 1)`;
-		
-		const css = `
-	/* Spotlight Slider Styles */
-	.spotlight-container { 
-		width: 94%; 
-		display: block; 
-		position: relative; 
-		margin-top: ${marginTop};
-		margin-left: auto;
-		margin-right: auto;
-		padding: 0;
+    function insertStyles() {
+        if (document.getElementById("spotlight-css-emby")) return;
+        
+        const bgColor = CONFIG.backgroundColor;
+        const frameColor = CONFIG.frameColor;
+        const marginTop = CONFIG.marginTop;
+        const playbuttonColor = CONFIG.playbuttonColor;
+        const rgb = hexToRgb(bgColor);
+        const rgbaColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 1)`;
+        
+        const css = `
+    /* Spotlight Slider Styles */
+    .spotlight-container { 
+        width: 94%; 
+        display: block; 
+        position: relative; 
+        margin-top: ${marginTop};
+        margin-left: auto;
+        margin-right: auto;
+        padding: 0;
         transition: box-shadow 0.3s ease;
         border-radius: 0.5rem;
         box-shadow: 10px 10px 10px 0px rgba(0, 0, 0, 0.35);
-	}
-	.spotlight-container:hover {
-		box-shadow: 10px 10px 10px 0px rgba(0, 0, 0, 0.35), 0 0 2px 4px ${frameColor};
-		border-radius: 0.5rem;
     }
-	/* Play Button Styles */
-	.spotlight .play-button-overlay {
-		position: absolute;
-		top: 2rem;
-		right: 2rem;
-		z-index: 25;
-		opacity: 0;
-		transition: opacity 0.3s ease;
-		pointer-events: none;
-	}
-	.spotlight-container:hover .play-button-overlay {
-		opacity: 1;
-		pointer-events: all;
-	}
-	.spotlight .play-button {
-		width: 80px;
-		height: 80px;
-		border-radius: 50%;
-		background: rgba(55, 55, 55, 0.3);
-		border: none;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		cursor: pointer;
-		transition: all 0.3s ease;
-		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-	}
-	.spotlight .play-button:hover {
-		transform: scale(1.02);
-		background: ${playbuttonColor};
-		box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
-	}
-	.spotlight .play-button svg {
-		width: 40px;
-		height: 40px;
-		fill: #ffffff;
-		margin-left: 6px;
-		position: relative;
-		left: -2px;
-		filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
-		transition: filter 0.3s ease;
-	}
-	.spotlight .play-button:hover svg {
-		filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.5));
-	}
-	.spotlight { 
-		position: relative; 
-		overflow: visible;
-		width: 100%;
-	}
-	.spotlight .banner-slider-wrapper {
-		position: relative;
-		width: 100%;
-		overflow: hidden;
+    .spotlight-container:hover {
+        box-shadow: 10px 10px 10px 0px rgba(0, 0, 0, 0.35), 0 0 2px 4px ${frameColor};
+        border-radius: 0.5rem;
+    }
+    /* Play Button Styles */
+    .spotlight .play-button-overlay {
+        position: absolute;
+        top: 2rem;
+        right: 2rem;
+        z-index: 25;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+        pointer-events: none;
+    }
+    .spotlight-container:hover .play-button-overlay {
+        opacity: 1;
+        pointer-events: all;
+    }
+    .spotlight .play-button {
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        background: rgba(55, 55, 55, 0.3);
+        border: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    }
+    .spotlight .play-button:hover {
+        transform: scale(1.02);
+        background: ${playbuttonColor};
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+    }
+    .spotlight .play-button svg {
+        width: 40px;
+        height: 40px;
+        fill: #ffffff;
+        margin-left: 6px;
+        position: relative;
+        left: -2px;
+        filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+        transition: filter 0.3s ease;
+    }
+    .spotlight .play-button:hover svg {
+        filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.5));
+    }
+    .spotlight { 
+        position: relative; 
+        overflow: visible;
+        width: 100%;
+    }
+    .spotlight .banner-slider-wrapper {
+        position: relative;
+        width: 100%;
+        overflow: hidden;
         border-radius: 0.5rem;
         background-color: ${bgColor};
         -webkit-backface-visibility: hidden;
         -moz-backface-visibility: hidden;
         backface-visibility: hidden;
         transform: translateZ(0);
-	}
-	.spotlight .banner-slider { 
-		display: flex; 
-		transition: transform .5s ease; 
-		will-change: transform;
-		margin: 0;
-		padding: 0;
-		width: 100%;
-	}
-	.spotlight .banner-item { 
-		flex: 0 0 100%; 
-		min-width: 100%;
-		max-width: 100%;
-		position: relative; 
-		cursor: pointer;
-		margin: 0;
-		padding: 0;
-		box-sizing: border-box;
-		overflow: hidden;
-	}
-	.spotlight .banner-cover { 
-		width: 100%;
-		height: min(48vmax, 54vh);
-		object-fit: cover;
-		object-position: center;
-		display: block; 
-		pointer-events: none;
-		margin: 0;
-		padding: 0;
-		border: 0;
-		outline: 0;
-		position: relative;
-		transform-origin: center center;
-		animation: zoomOut 8s ease-out forwards;
-	}
-	@keyframes zoomOut {
-		0% {
-			transform: scale(1.15);
-		}
-		100% {
-			transform: scale(1.0);
-		}
-	}
-	.spotlight .banner-gradient-left {
-		position: absolute;
-		top: 0;
-		bottom: 0;
-		left: 0;
-		width: 35%;
-		pointer-events: none;
-		z-index: 6;
-		background: linear-gradient(to right, 
-			${rgbaColor} 0%, 
-			${rgbaColor} 3%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.98) 6%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.95) 10%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.92) 15%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.87) 20%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.8) 25%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.7) 35%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.55) 45%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.4) 55%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.25) 65%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.15) 75%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.08) 85%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.03) 92%,
-			transparent 100%);
-	}
-	.spotlight .banner-gradient-right {
-		position: absolute;
-		top: 0;
-		bottom: 0;
-		right: 0;
-		width: 35%;
-		pointer-events: none;
-		z-index: 6;
-		background: linear-gradient(to left, 
-			${rgbaColor} 0%, 
-			${rgbaColor} 3%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.98) 6%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.95) 10%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.92) 15%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.87) 20%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.8) 25%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.7) 35%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.55) 45%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.4) 55%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.25) 65%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.15) 75%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.08) 85%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.03) 92%,
-			transparent 100%);
-	}
-	.spotlight .banner-vignette-top {
-		position: absolute;
-		top: 0;
-		left: 0;
-		right: 0;
-		height: 30%;
-		background: linear-gradient(to bottom, 
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.85) 0%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.6) 30%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.3) 60%,
-			transparent 100%);
-		pointer-events: none;
-		z-index: 6;
-	}
-	.spotlight .banner-vignette-bottom {
-		position: absolute;
-		bottom: 0;
-		left: 0;
-		right: 0;
-		height: 30%;
-		background: linear-gradient(to top, 
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.85) 0%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.6) 30%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.3) 60%,
-			transparent 100%);
-		pointer-events: none;
-		z-index: 6;
-	}
-	.spotlight .banner-logo {
-		position: absolute;
-		left: 50%;
-		top: 45%;
-		transform: translate(-50%, -50%);
-		max-width: 60%;
-		max-height: 50%;
-		object-fit: contain;
-		z-index: 15;
-		filter: drop-shadow(0 6px 20px rgba(0,0,0,0.95)) drop-shadow(0 0 40px rgba(0,0,0,0.6));
-		pointer-events: none;
-		transition: transform 0.5s ease;
-	}
-	.spotlight-container:hover .banner-logo {
+    }
+    .spotlight .banner-slider { 
+        display: flex; 
+        transition: transform .5s ease; 
+        will-change: transform;
+        margin: 0;
+        padding: 0;
+        width: 100%;
+    }
+    .spotlight .banner-item { 
+        flex: 0 0 100%; 
+        min-width: 100%;
+        max-width: 100%;
+        position: relative; 
+        cursor: pointer;
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        overflow: hidden;
+    }
+    .spotlight .banner-cover { 
+        width: 100%;
+        height: min(48vmax, 54vh);
+        object-fit: cover;
+        object-position: center;
+        display: block; 
+        pointer-events: none;
+        margin: 0;
+        padding: 0;
+        border: 0;
+        outline: 0;
+        position: relative;
+        transform-origin: center center;
+        animation: zoomOut 8s ease-out forwards;
+    }
+    @keyframes zoomOut {
+        0% {
+            transform: scale(1.15);
+        }
+        100% {
+            transform: scale(1.0);
+        }
+    }
+    .spotlight .banner-gradient-left {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        width: 35%;
+        pointer-events: none;
+        z-index: 6;
+        background: linear-gradient(to right, 
+            ${rgbaColor} 0%, 
+            ${rgbaColor} 3%,
+            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.98) 6%,
+            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.95) 10%,
+            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.92) 15%,
+            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.87) 20%,
+            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.8) 25%,
+            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.7) 35%,
+            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.55) 45%,
+            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.4) 55%,
+            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.25) 65%,
+            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.15) 75%,
+            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.08) 85%,
+            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.03) 92%,
+            transparent 100%);
+    }
+    .spotlight .banner-gradient-right {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        right: 0;
+        width: 35%;
+        pointer-events: none;
+        z-index: 6;
+        background: linear-gradient(to left, 
+            ${rgbaColor} 0%, 
+            ${rgbaColor} 3%,
+            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.98) 6%,
+            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.95) 10%,
+            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.92) 15%,
+            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.87) 20%,
+            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.8) 25%,
+            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.7) 35%,
+            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.55) 45%,
+            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.4) 55%,
+            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.25) 65%,
+            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.15) 75%,
+            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.08) 85%,
+            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.03) 92%,
+            transparent 100%);
+    }
+    .spotlight .banner-vignette-top {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 30%;
+        background: linear-gradient(to bottom, 
+            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.85) 0%,
+            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.6) 30%,
+            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.3) 60%,
+            transparent 100%);
+        pointer-events: none;
+        z-index: 6;
+    }
+    .spotlight .banner-vignette-bottom {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 30%;
+        background: linear-gradient(to top, 
+            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.85) 0%,
+            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.6) 30%,
+            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.3) 60%,
+            transparent 100%);
+        pointer-events: none;
+        z-index: 6;
+    }
+    .spotlight .banner-logo {
+        position: absolute;
+        left: 50%;
+        top: 45%;
+        transform: translate(-50%, -50%);
+        max-width: 60%;
+        max-height: 50%;
+        object-fit: contain;
+        z-index: 15;
+        filter: drop-shadow(0 6px 20px rgba(0,0,0,0.95)) drop-shadow(0 0 40px rgba(0,0,0,0.6));
+        pointer-events: none;
+        transition: transform 0.5s ease;
+    }
+    .spotlight-container:hover .banner-logo {
         transform: translate(-50%, -50%) scale(1.1);
     }
-	.spotlight .banner-title { 
-		position: absolute; 
-		left: 50%;
-		top: 45%;
-		transform: translate(-50%, -50%);
-		z-index: 10; 
-		font-size: clamp(1.5rem, 3.5vw, 3rem); 
-		font-weight: 700; 
-		color: #fff;
-		text-shadow: 2px 2px 8px rgba(0,0,0,0.9);
-		pointer-events: none;
-		text-align: center;
-		max-width: 80%;
-		transition: transform 0.5s ease;
-	}
-	.spotlight-container:hover .banner-title {
+    .spotlight .banner-title { 
+        position: absolute; 
+        left: 50%;
+        top: 45%;
+        transform: translate(-50%, -50%);
+        z-index: 10; 
+        font-size: clamp(1.5rem, 3.5vw, 3rem); 
+        font-weight: 700; 
+        color: #fff;
+        text-shadow: 2px 2px 8px rgba(0,0,0,0.9);
+        pointer-events: none;
+        text-align: center;
+        max-width: 80%;
+        transition: transform 0.5s ease;
+    }
+    .spotlight-container:hover .banner-title {
         transform: translate(-50%, -50%) scale(1.1);
     }
-	.spotlight .banner-tagline {
-		position: absolute;
-		left: 50%;
-		bottom: 4%;
-		transform: translateX(-50%);
-		z-index: 10;
-		font-size: clamp(1.3rem, 2vw, 1.6rem);
-		font-weight: 500;
-		color: rgba(255,255,255,0.9);
-		text-shadow: 1px 1px 4px rgba(0,0,0,0.9);
-		pointer-events: none;
-		text-align: center;
-		max-width: 60%;
-	}
-	@media (max-width: 1500px) {
+    .spotlight .banner-tagline {
+        position: absolute;
+        left: 50%;
+        bottom: 4%;
+        transform: translateX(-50%);
+        z-index: 10;
+        font-size: clamp(1.3rem, 2vw, 1.6rem);
+        font-weight: 500;
+        color: rgba(255,255,255,0.9);
+        text-shadow: 1px 1px 4px rgba(0,0,0,0.9);
+        pointer-events: none;
+        text-align: center;
+        max-width: 60%;
+    }
+    @media (max-width: 1500px) {
         .spotlight .banner-tagline {
             display: none;
         }
     }
-	.spotlight .banner-info {
-		position: absolute;
-		left: 3vmin;
-		bottom: 1.5rem;
-		z-index: 10;
-		display: flex;
-		flex-direction: column;
-		align-items: flex-start;
-		gap: 0.5rem;
-		pointer-events: none;
-		max-width: 60%;
-	}
-	.spotlight .banner-genres {
-		display: flex;
-		gap: 0.8rem;
-		flex-wrap: wrap;
-	}
-	.spotlight .banner-genre {
-		font-size: clamp(1.1rem, 1.8vw, 1.4rem);
-		color: rgba(255,255,255,0.9);
-		text-shadow: 1px 1px 4px rgba(0,0,0,0.9);
-		font-weight: 500;
-	}
-	.spotlight .banner-genre:not(:last-child)::after {
-		content: '•';
-		margin-left: 0.8rem;
-		opacity: 0.6;
-	}
-	.spotlight .banner-meta {
-		display: flex;
-		gap: 1.2rem;
-		align-items: center;
-		flex-wrap: wrap;
-	}
-	.spotlight .banner-meta-item {
-		font-size: clamp(1.1rem, 1.8vw, 1.4rem);
-		color: rgba(255,255,255,0.85);
-		text-shadow: 1px 1px 4px rgba(0,0,0,0.9);
-		font-weight: 500;
-	}
-	.spotlight .meta-rating-item {
-		display: flex;
-		align-items: center;
-		gap: 0.4rem;
-	}
-	.spotlight .meta-rating-icon {
-		width: 1.8rem;
-		height: 1.8rem;
-		object-fit: contain;
-		filter: drop-shadow(0 2px 4px rgba(0,0,0,0.8));
-	}
-	.spotlight .meta-rating-star {
-		width: 1.8rem;
-		height: 1.8rem;
-		fill: #cb272a;
-		filter: drop-shadow(0 2px 4px rgba(0,0,0,0.8));
-	}
-	.spotlight .meta-rating-score {
-		font-size: clamp(1.1rem, 1.8vw, 1.4rem);
-		font-weight: 500;
-		color: rgba(255,255,255,0.85);
-		text-shadow: 1px 1px 4px rgba(0,0,0,0.9);
-	}
-	.spotlight .arrow { 
-		position: absolute; 
-		top: 50%; 
-		transform: translateY(-50%); 
-		z-index: 20; 
-		border: none; 
-		color: white; 
-		cursor: pointer; 
-		opacity: 0.7; 
-		padding: 0;
-		background: none;
-		transition: opacity 0.3s;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-	.spotlight .arrow svg {
-		filter: drop-shadow(0 2px 6px rgba(0,0,0,0.8));
-	}
-	.spotlight .arrow:hover { 
-		opacity: 1; 
-	}
-	.spotlight .arrow.left { left: 1rem; } 
-	.spotlight .arrow.right { right: 1rem; }
-	.spotlight .controls { 
-		position: absolute; 
-		right: 2rem; 
-		bottom: 2rem; 
-		z-index: 20; 
-		display: flex; 
-		gap: .5rem; 
-	}
-	.spotlight .control { 
-		width: .8rem; 
-		height: .8rem; 
-		border-radius: 50%; 
-		background: rgba(255,255,255,0.4); 
-		border: none; 
-		cursor: pointer; 
-		transition: background 0.3s;
-	}
-	.spotlight .control.active { 
-		background: white; 
-	}
-	.spotlight .loader { 
-		position: absolute; 
-		inset: 0; 
-		display: flex; 
-		align-items: center; 
-		justify-content: center; 
-		z-index: 30; 
-		background: rgba(0,0,0,0.3); 
-	}
-	`;
-		const s = document.createElement("style");
-		s.id = "spotlight-css-emby";
-		s.innerHTML = css;
-		document.head.appendChild(s);
-	}
+    .spotlight .banner-info {
+        position: absolute;
+        left: 3vmin;
+        bottom: 1.5rem;
+        z-index: 10;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+        pointer-events: none;
+        max-width: 60%;
+    }
+    .spotlight .banner-genres {
+        display: flex;
+        gap: 0.8rem;
+        flex-wrap: wrap;
+    }
+    .spotlight .banner-genre {
+        font-size: clamp(1.1rem, 1.8vw, 1.4rem);
+        color: rgba(255,255,255,0.9);
+        text-shadow: 1px 1px 4px rgba(0,0,0,0.9);
+        font-weight: 500;
+    }
+    .spotlight .banner-genre:not(:last-child)::after {
+        content: '•';
+        margin-left: 0.8rem;
+        opacity: 0.6;
+    }
+    .spotlight .banner-meta {
+        display: flex;
+        gap: 1.2rem;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+    .spotlight .banner-meta-item {
+        font-size: clamp(1.1rem, 1.8vw, 1.4rem);
+        color: rgba(255,255,255,0.85);
+        text-shadow: 1px 1px 4px rgba(0,0,0,0.9);
+        font-weight: 500;
+    }
+    .spotlight .meta-rating-item {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+    }
+    .spotlight .meta-rating-icon {
+        width: 1.8rem;
+        height: 1.8rem;
+        object-fit: contain;
+        filter: drop-shadow(0 2px 4px rgba(0,0,0,0.8));
+    }
+    .spotlight .meta-rating-star {
+        width: 1.8rem;
+        height: 1.8rem;
+        fill: #cb272a;
+        filter: drop-shadow(0 2px 4px rgba(0,0,0,0.8));
+    }
+    .spotlight .meta-rating-score {
+        font-size: clamp(1.1rem, 1.8vw, 1.4rem);
+        font-weight: 500;
+        color: rgba(255,255,255,0.85);
+        text-shadow: 1px 1px 4px rgba(0,0,0,0.9);
+    }
+    .spotlight .arrow { 
+        position: absolute; 
+        top: 50%; 
+        transform: translateY(-50%); 
+        z-index: 20; 
+        border: none; 
+        color: white; 
+        cursor: pointer; 
+        opacity: 0.7; 
+        padding: 0;
+        background: none;
+        transition: opacity 0.3s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .spotlight .arrow svg {
+        filter: drop-shadow(0 2px 6px rgba(0,0,0,0.8));
+    }
+    .spotlight .arrow:hover { 
+        opacity: 1; 
+    }
+    .spotlight .arrow.left { left: 1rem; } 
+    .spotlight .arrow.right { right: 1rem; }
+    .spotlight .controls { 
+        position: absolute; 
+        right: 2rem; 
+        bottom: 2rem; 
+        z-index: 20; 
+        display: flex; 
+        gap: .5rem; 
+    }
+    .spotlight .control { 
+        width: .8rem; 
+        height: .8rem; 
+        border-radius: 50%; 
+        background: rgba(255,255,255,0.4); 
+        border: none; 
+        cursor: pointer; 
+        transition: background 0.3s;
+    }
+    .spotlight .control.active { 
+        background: white; 
+    }
+    .spotlight .loader { 
+        position: absolute; 
+        inset: 0; 
+        display: flex; 
+        align-items: center; 
+        justify-content: center; 
+        z-index: 30; 
+        background: rgba(0,0,0,0.3); 
+    }
+    `;
+        const s = document.createElement("style");
+        s.id = "spotlight-css-emby";
+        s.innerHTML = css;
+        document.head.appendChild(s);
+    }
     
-	function buildQuery() {
-		const q = {
-			IncludeItemTypes: "Movie,Series",
-			Recursive: true,
-			Limit: 50,
-			SortBy: "PremiereDate,ProductionYear,SortName",
-			SortOrder: "Descending",
-			EnableImageTypes: "Primary,Backdrop,Thumb,Logo,Banner",
-			EnableUserData: false,
-			EnableTotalRecordCount: false,
-			Fields: "PrimaryImageAspectRatio,BackdropImageTags,ImageTags,ParentLogoImageTag,ParentLogoItemId,CriticRating,CommunityRating,OfficialRating,PremiereDate,ProductionYear,Genres,RunTimeTicks,Taglines"  // Taglines hinzugefügt
-		};
-		return q;
-	}
+    function buildQuery() {
+        const q = {
+            IncludeItemTypes: "Movie,Series",
+            Recursive: true,
+            Limit: 50,
+            SortBy: "PremiereDate,ProductionYear,SortName",
+            SortOrder: "Descending",
+            EnableImageTypes: "Primary,Backdrop,Thumb,Logo,Banner",
+            EnableUserData: false,
+            EnableTotalRecordCount: false,
+            Fields: "PrimaryImageAspectRatio,BackdropImageTags,ImageTags,ParentLogoImageTag,ParentLogoItemId,CriticRating,CommunityRating,OfficialRating,PremiereDate,ProductionYear,Genres,RunTimeTicks,Taglines"
+        };
+        return q;
+    }
     
     function getImageUrl(apiClient, item, options) {
         options = options || {};
@@ -542,7 +518,116 @@
         return null;
     }
     
+    /**
+     * Lädt die Custom Items Liste aus der TXT-Datei
+     * @returns {Promise<string[]|null>} Array mit Item-IDs oder null wenn Datei nicht existiert
+     */
+    async function loadCustomItemsList() {
+        try {
+            const response = await fetch(CONFIG.customItemsFile);
+            
+            // Wenn Datei nicht existiert (404), return null
+            if (!response.ok) {
+                if (response.status === 404) {
+                    console.log("[Spotlight] Custom items file nicht gefunden, verwende Standard-Modus");
+                    return null;
+                }
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const text = await response.text();
+            
+            // Parse die Datei: Eine Item-ID pro Zeile, ignoriere Leerzeilen und Kommentare
+            // Emby IDs können numerisch oder alphanumerisch sein
+            const itemIds = text
+                .split('\n')
+                .map(line => line.trim())
+                .filter(line => line.length > 0 && !line.startsWith('#'))
+                .filter(line => /^[a-zA-Z0-9]+$/.test(line)); // Alphanumerische IDs
+            
+            if (itemIds.length === 0) {
+                console.warn("[Spotlight] Custom items file ist leer oder enthält keine gültigen IDs");
+                return null;
+            }
+            
+            console.log(`[Spotlight] Custom items geladen: ${itemIds.length} Items`);
+            console.log("[Spotlight] Item-IDs:", itemIds);
+            return itemIds;
+            
+        } catch (error) {
+            console.warn("[Spotlight] Fehler beim Laden der Custom Items Liste:", error);
+            return null;
+        }
+    }
+    
+    /**
+     * Holt spezifische Items anhand ihrer IDs
+     * @param {Object} apiClient - Der Emby API Client
+     * @param {string[]} itemIds - Array mit Item-IDs
+     * @returns {Promise<Array>} Array mit Item-Objekten
+     */
+    async function fetchItemsByIds(apiClient, itemIds) {
+        try {
+            const items = [];
+            const userId = apiClient.getCurrentUserId();
+            
+            // Hole Items einzeln
+            for (const itemId of itemIds) {
+                try {
+                    console.log(`[Spotlight] Lade Item: ${itemId}`);
+                    const item = await apiClient.getItem(userId, itemId);
+                    if (item) {
+                        console.log(`[Spotlight] Item erfolgreich geladen: ${item.Name} (${itemId})`);
+                        items.push(item);
+                    } else {
+                        console.warn(`[Spotlight] Item ${itemId} nicht gefunden (null zurückgegeben)`);
+                    }
+                } catch (error) {
+                    console.warn(`[Spotlight] Fehler beim Laden von Item ${itemId}:`, error);
+                }
+            }
+            
+            console.log(`[Spotlight] ${items.length} von ${itemIds.length} Custom Items erfolgreich geladen`);
+            return items;
+            
+        } catch (error) {
+            console.error("[Spotlight] Fehler beim Abrufen der Custom Items:", error);
+            return [];
+        }
+    }
+    
     async function fetchItems(apiClient) {
+        // Versuche zuerst Custom Items zu laden
+        const customItemIds = await loadCustomItemsList();
+        
+        if (customItemIds && customItemIds.length > 0) {
+            // Custom Items Modus
+            console.log("[Spotlight] Custom Items Modus aktiv");
+            const items = await fetchItemsByIds(apiClient, customItemIds);
+            
+            if (items.length === 0) {
+                console.warn("[Spotlight] Keine Custom Items geladen, falle zurück auf Standard-Modus");
+                // Fallback auf Standard-Modus wenn keine Items geladen werden konnten
+                return fetchStandardItems(apiClient);
+            }
+            
+            // Shuffeln und limitieren (optional, da Custom Items meist gezielt sind)
+            // Wenn du die Reihenfolge aus der Datei beibehalten willst, entferne das Shuffeln:
+            // return items.slice(0, Math.min(CONFIG.limit, items.length));
+            
+            const shuffledItems = shuffleArray(items);
+            return shuffledItems.slice(0, Math.min(CONFIG.limit, shuffledItems.length));
+        }
+        
+        // Standard-Modus (wenn keine Custom Items Liste existiert)
+        console.log("[Spotlight] Standard-Modus aktiv");
+        return fetchStandardItems(apiClient);
+    }
+    
+    /**
+     * Standard Fetch-Methode (Original-Implementierung)
+     */
+    async function fetchStandardItems(apiClient) {
         const q = buildQuery();
         try {
             const items = await apiClient.getItems(apiClient.getCurrentUserId(), q);
@@ -555,143 +640,143 @@
         }
     }
     
-	function createInfoElement(item) {
-		const infoContainer = document.createElement("div");
-		infoContainer.className = "banner-info";
-		
-		// Genres (max 3) - darüber
-		if (item.Genres && item.Genres.length > 0) {
-			const genresDiv = document.createElement("div");
-			genresDiv.className = "banner-genres";
-			const genresToShow = item.Genres.slice(0, 3);
-			genresToShow.forEach(genre => {
-				const genreSpan = document.createElement("span");
-				genreSpan.className = "banner-genre";
-				genreSpan.textContent = genre;
-				genresDiv.appendChild(genreSpan);
-			});
-			infoContainer.appendChild(genresDiv);
-		}
-		
-		// Meta-Informationen (Jahr, Laufzeit, Ratings) - in dieser Reihenfolge
-		const metaDiv = document.createElement("div");
-		metaDiv.className = "banner-meta";
-		
-		// Jahr ZUERST
-		if (item.ProductionYear) {
-			const yearSpan = document.createElement("span");
-			yearSpan.className = "banner-meta-item";
-			yearSpan.textContent = item.ProductionYear;
-			metaDiv.appendChild(yearSpan);
-		}
-		
-		// Rotten Tomatoes Rating
-		if (item.CriticRating !== null && item.CriticRating !== undefined) {
-			const rtRating = document.createElement("div");
-			rtRating.className = "meta-rating-item banner-meta-item";
-			const isFresh = item.CriticRating >= 60;
-			const tomatoImg = isFresh ? 'fresh.png' : 'rotten.png';
-			
-			rtRating.innerHTML = `
-				<img src="modules/mediainfo/${tomatoImg}" class="meta-rating-icon" alt="Rotten Tomatoes">
-				<span class="meta-rating-score">${item.CriticRating}%</span>
-			`;
-			metaDiv.appendChild(rtRating);
-		}
-		
-		// IMDb Rating
-		if (item.CommunityRating) {
-			const imdbRating = document.createElement("div");
-			imdbRating.className = "meta-rating-item banner-meta-item";
-			imdbRating.innerHTML = `
-				<svg class="meta-rating-star" viewBox="0 0 24 24">
-					<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
-				</svg>
-				<span class="meta-rating-score">${item.CommunityRating.toFixed(1)}</span>
-			`;
-			metaDiv.appendChild(imdbRating);
-		}
-		
-		// Laufzeit
-		if (item.RunTimeTicks) {
-			const runtimeMinutes = Math.round(item.RunTimeTicks / 600000000);
-			const runtimeSpan = document.createElement("span");
-			runtimeSpan.className = "banner-meta-item";
-			runtimeSpan.textContent = formatRuntime(runtimeMinutes);
-			metaDiv.appendChild(runtimeSpan);
-		}
-		
-		if (metaDiv.children.length > 0) {
-			infoContainer.appendChild(metaDiv);
-		}
-		
-		return infoContainer.children.length > 0 ? infoContainer : null;
-	}
+    function createInfoElement(item) {
+        const infoContainer = document.createElement("div");
+        infoContainer.className = "banner-info";
+        
+        // Genres (max 3) - darüber
+        if (item.Genres && item.Genres.length > 0) {
+            const genresDiv = document.createElement("div");
+            genresDiv.className = "banner-genres";
+            const genresToShow = item.Genres.slice(0, 3);
+            genresToShow.forEach(genre => {
+                const genreSpan = document.createElement("span");
+                genreSpan.className = "banner-genre";
+                genreSpan.textContent = genre;
+                genresDiv.appendChild(genreSpan);
+            });
+            infoContainer.appendChild(genresDiv);
+        }
+        
+        // Meta-Informationen (Jahr, Laufzeit, Ratings) - in dieser Reihenfolge
+        const metaDiv = document.createElement("div");
+        metaDiv.className = "banner-meta";
+        
+        // Jahr ZUERST
+        if (item.ProductionYear) {
+            const yearSpan = document.createElement("span");
+            yearSpan.className = "banner-meta-item";
+            yearSpan.textContent = item.ProductionYear;
+            metaDiv.appendChild(yearSpan);
+        }
+        
+        // Rotten Tomatoes Rating
+        if (item.CriticRating !== null && item.CriticRating !== undefined) {
+            const rtRating = document.createElement("div");
+            rtRating.className = "meta-rating-item banner-meta-item";
+            const isFresh = item.CriticRating >= 60;
+            const tomatoImg = isFresh ? 'fresh.png' : 'rotten.png';
+            
+            rtRating.innerHTML = `
+                <img src="modules/mediainfo/${tomatoImg}" class="meta-rating-icon" alt="Rotten Tomatoes">
+                <span class="meta-rating-score">${item.CriticRating}%</span>
+            `;
+            metaDiv.appendChild(rtRating);
+        }
+        
+        // IMDb Rating
+        if (item.CommunityRating) {
+            const imdbRating = document.createElement("div");
+            imdbRating.className = "meta-rating-item banner-meta-item";
+            imdbRating.innerHTML = `
+                <svg class="meta-rating-star" viewBox="0 0 24 24">
+                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                </svg>
+                <span class="meta-rating-score">${item.CommunityRating.toFixed(1)}</span>
+            `;
+            metaDiv.appendChild(imdbRating);
+        }
+        
+        // Laufzeit
+        if (item.RunTimeTicks) {
+            const runtimeMinutes = Math.round(item.RunTimeTicks / 600000000);
+            const runtimeSpan = document.createElement("span");
+            runtimeSpan.className = "banner-meta-item";
+            runtimeSpan.textContent = formatRuntime(runtimeMinutes);
+            metaDiv.appendChild(runtimeSpan);
+        }
+        
+        if (metaDiv.children.length > 0) {
+            infoContainer.appendChild(metaDiv);
+        }
+        
+        return infoContainer.children.length > 0 ? infoContainer : null;
+    }
     
-	function createBannerElement(item, apiClient) {
-		const div = document.createElement("div");
-		div.className = "banner-item";
-		
-		const img = document.createElement("img");
-		img.className = "banner-cover";
-		img.draggable = false;
-		img.alt = item.Name || "";
-		img.loading = "eager";
-		img.decoding = "async";
-		img.src = getImageUrl(apiClient, item, { width: CONFIG.imageWidth, prefer: "Backdrop" });
-		
-		div.appendChild(img);
-		
-		const gradientLeft = document.createElement("div");
-		gradientLeft.className = "banner-gradient-left";
-		div.appendChild(gradientLeft);
-		
-		const gradientRight = document.createElement("div");
-		gradientRight.className = "banner-gradient-right";
-		div.appendChild(gradientRight);
-		
-		const vignetteTop = document.createElement("div");
-		vignetteTop.className = "banner-vignette-top";
-		div.appendChild(vignetteTop);
-		
-		const vignetteBottom = document.createElement("div");
-		vignetteBottom.className = "banner-vignette-bottom";
-		div.appendChild(vignetteBottom);
-		
-		const logoUrl = getLogoUrl(apiClient, item);
-		if (logoUrl) {
-			const logo = document.createElement("img");
-			logo.className = "banner-logo";
-			logo.src = logoUrl;
-			logo.alt = item.Name + " Logo";
-			logo.draggable = false;
-			div.appendChild(logo);
-		} else {
-			const title = document.createElement("div");
-			title.className = "banner-title";
-			title.textContent = item.Name || "";
-			div.appendChild(title);
-		}
-		
-		// NEU: Tagline hinzufügen
-		if (item.Taglines && item.Taglines.length > 0) {
-			const tagline = document.createElement("div");
-			tagline.className = "banner-tagline";
-			tagline.textContent = item.Taglines[0];
-			div.appendChild(tagline);
-		}
-		
-		const info = createInfoElement(item);
-		if (info) {
-			div.appendChild(info);
-		}
-		
-		div.dataset.itemId = item.Id;
-		if (item.ServerId) {
-			div.dataset.serverId = item.ServerId;
-		}
-		return div;
-	}
+    function createBannerElement(item, apiClient) {
+        const div = document.createElement("div");
+        div.className = "banner-item";
+        
+        const img = document.createElement("img");
+        img.className = "banner-cover";
+        img.draggable = false;
+        img.alt = item.Name || "";
+        img.loading = "eager";
+        img.decoding = "async";
+        img.src = getImageUrl(apiClient, item, { width: CONFIG.imageWidth, prefer: "Backdrop" });
+        
+        div.appendChild(img);
+        
+        const gradientLeft = document.createElement("div");
+        gradientLeft.className = "banner-gradient-left";
+        div.appendChild(gradientLeft);
+        
+        const gradientRight = document.createElement("div");
+        gradientRight.className = "banner-gradient-right";
+        div.appendChild(gradientRight);
+        
+        const vignetteTop = document.createElement("div");
+        vignetteTop.className = "banner-vignette-top";
+        div.appendChild(vignetteTop);
+        
+        const vignetteBottom = document.createElement("div");
+        vignetteBottom.className = "banner-vignette-bottom";
+        div.appendChild(vignetteBottom);
+        
+        const logoUrl = getLogoUrl(apiClient, item);
+        if (logoUrl) {
+            const logo = document.createElement("img");
+            logo.className = "banner-logo";
+            logo.src = logoUrl;
+            logo.alt = item.Name + " Logo";
+            logo.draggable = false;
+            div.appendChild(logo);
+        } else {
+            const title = document.createElement("div");
+            title.className = "banner-title";
+            title.textContent = item.Name || "";
+            div.appendChild(title);
+        }
+        
+        // Tagline hinzufügen
+        if (item.Taglines && item.Taglines.length > 0) {
+            const tagline = document.createElement("div");
+            tagline.className = "banner-tagline";
+            tagline.textContent = item.Taglines[0];
+            div.appendChild(tagline);
+        }
+        
+        const info = createInfoElement(item);
+        if (info) {
+            div.appendChild(info);
+        }
+        
+        div.dataset.itemId = item.Id;
+        if (item.ServerId) {
+            div.dataset.serverId = item.ServerId;
+        }
+        return div;
+    }
     
     function buildSlider(items, apiClient) {
         const container = document.createElement("div");
@@ -744,22 +829,19 @@
         spotlight.appendChild(btnLeft);
         spotlight.appendChild(btnRight);
         
-		// Play Button hinzufügen
-		const playButtonOverlay = document.createElement("div");
-		playButtonOverlay.className = "play-button-overlay";
-
-		const playButton = document.createElement("button");
-		playButton.className = "play-button";
-		playButton.setAttribute("aria-label", "Play");
-		playButton.innerHTML = `
-			<svg viewBox="0 0 24 24">
-				<path d="M8 5v14l11-7z"/>
-			</svg>
-		`;
-
-		playButtonOverlay.appendChild(playButton);
-		spotlight.appendChild(playButtonOverlay);
-
+        // Play Button hinzufügen
+        const playButtonOverlay = document.createElement("div");
+        playButtonOverlay.className = "play-button-overlay";
+        const playButton = document.createElement("button");
+        playButton.className = "play-button";
+        playButton.setAttribute("aria-label", "Play");
+        playButton.innerHTML = `
+            <svg viewBox="0 0 24 24">
+                <path d="M8 5v14l11-7z"/>
+            </svg>
+        `;
+        playButtonOverlay.appendChild(playButton);
+        spotlight.appendChild(playButtonOverlay);
         const controls = document.createElement("div");
         controls.className = "controls";
         
@@ -778,52 +860,51 @@
         
         return { container, spotlight, slider, btnLeft, btnRight, controls, sliderWrapper, playButtonOverlay };
     }
-
-	function playItem(itemId, serverId, apiClient) {
-		console.log("[Spotlight] Starte Wiedergabe für Item:", itemId, "ServerId:", serverId);
-		
-		let serverIdToUse = serverId;
-		
-		if (!serverIdToUse && apiClient) {
-			if (apiClient.serverId) {
-				serverIdToUse = apiClient.serverId;
-			} else if (apiClient.serverInfo && apiClient.serverInfo.Id) {
-				serverIdToUse = apiClient.serverInfo.Id;
-			} else if (apiClient._serverInfo && apiClient._serverInfo.Id) {
-				serverIdToUse = apiClient._serverInfo.Id;
-			}
-		}
-		
-		// Versuche MediaController zu verwenden
-		if (window.require) {
-			try {
-				window.require(['playbackManager'], function(playbackManager) {
-					if (playbackManager && typeof playbackManager.play === 'function') {
-						console.log("[Spotlight] Verwende playbackManager.play");
-						playbackManager.play({
-							ids: [itemId],
-							serverId: serverIdToUse
-						});
-						return;
-					}
-				});
-				return;
-			} catch (e) {
-				console.warn("[Spotlight] playbackManager nicht verfügbar", e);
-			}
-		}
-		
-		// Fallback: Navigation zur Item-Seite mit Autoplay
-		if (window.appRouter && typeof window.appRouter.showItem === "function") {
-			console.log("[Spotlight] Fallback: Navigation zu Item mit Autoplay");
-			window.appRouter.showItem(itemId, serverIdToUse);
-			// Versuche nach Navigation Autoplay zu triggern
-			setTimeout(() => {
-				const playButton = document.querySelector('.btnPlay');
-				if (playButton) playButton.click();
-			}, 500);
-		}
-	}
+    function playItem(itemId, serverId, apiClient) {
+        console.log("[Spotlight] Starte Wiedergabe für Item:", itemId, "ServerId:", serverId);
+        
+        let serverIdToUse = serverId;
+        
+        if (!serverIdToUse && apiClient) {
+            if (apiClient.serverId) {
+                serverIdToUse = apiClient.serverId;
+            } else if (apiClient.serverInfo && apiClient.serverInfo.Id) {
+                serverIdToUse = apiClient.serverInfo.Id;
+            } else if (apiClient._serverInfo && apiClient._serverInfo.Id) {
+                serverIdToUse = apiClient._serverInfo.Id;
+            }
+        }
+        
+        // Versuche MediaController zu verwenden
+        if (window.require) {
+            try {
+                window.require(['playbackManager'], function(playbackManager) {
+                    if (playbackManager && typeof playbackManager.play === 'function') {
+                        console.log("[Spotlight] Verwende playbackManager.play");
+                        playbackManager.play({
+                            ids: [itemId],
+                            serverId: serverIdToUse
+                        });
+                        return;
+                    }
+                });
+                return;
+            } catch (e) {
+                console.warn("[Spotlight] playbackManager nicht verfügbar", e);
+            }
+        }
+        
+        // Fallback: Navigation zur Item-Seite mit Autoplay
+        if (window.appRouter && typeof window.appRouter.showItem === "function") {
+            console.log("[Spotlight] Fallback: Navigation zu Item mit Autoplay");
+            window.appRouter.showItem(itemId, serverIdToUse);
+            // Versuche nach Navigation Autoplay zu triggern
+            setTimeout(() => {
+                const playButton = document.querySelector('.btnPlay');
+                if (playButton) playButton.click();
+            }, 500);
+        }
+    }
     
     function navigateToItem(itemId, serverId, apiClient) {
         let serverIdToUse = serverId;
@@ -943,21 +1024,20 @@
             }
         }
         
-		function updateTransform(index, animate = true) {
-			const sliderWrapper = spotlight.querySelector('.banner-slider-wrapper');
-			const width = sliderWrapper.getBoundingClientRect().width;
-			const x = Math.round(-(index * width)); // ← Math.round hinzugefügt
-			
-			if (!animate) {
-				slider.style.transition = "none";
-			} else {
-				slider.style.transition = "transform .5s ease";
-			}
-			
-			slider.style.transform = `translate3d(${x}px, 0, 0)`;
-			// NEU: Force repaint
-			void slider.offsetHeight;
-		}
+        function updateTransform(index, animate = true) {
+            const sliderWrapper = spotlight.querySelector('.banner-slider-wrapper');
+            const width = sliderWrapper.getBoundingClientRect().width;
+            const x = Math.round(-(index * width));
+            
+            if (!animate) {
+                slider.style.transition = "none";
+            } else {
+                slider.style.transition = "transform .5s ease";
+            }
+            
+            slider.style.transform = `translate3d(${x}px, 0, 0)`;
+            void slider.offsetHeight;
+        }
         
         function setActiveDot(idx) {
             const dots = controls.querySelectorAll(".control");
@@ -966,16 +1046,16 @@
             if (dots[realIndex]) dots[realIndex].classList.add("active");
         }
         
-		const resizeHandler = () => {
-			updateTransform(currentIndex, false);
-			void slider.offsetHeight; // Force repaint - NEU hinzugefügt
-		};
-		window.addEventListener("resize", resizeHandler);
-		setTimeout(() => {
-			updateTransform(currentIndex, false);
-			setActiveDot(currentIndex);
-			triggerZoomAnimation();
-		}, 50);
+        const resizeHandler = () => {
+            updateTransform(currentIndex, false);
+            void slider.offsetHeight;
+        };
+        window.addEventListener("resize", resizeHandler);
+        setTimeout(() => {
+            updateTransform(currentIndex, false);
+            setActiveDot(currentIndex);
+            triggerZoomAnimation();
+        }, 50);
         
         btnRight.addEventListener("click", (e) => {
             e.stopPropagation();
@@ -1042,23 +1122,22 @@
             }
         });
         
-		// Play Button Click Handler
-		const playButtonOverlay = spotlight.querySelector('.play-button-overlay');
-		if (playButtonOverlay) {
-			playButtonOverlay.addEventListener("click", (e) => {
-				e.stopPropagation();
-				
-				// Finde das aktuell sichtbare Item
-				const visibleItem = slider.children[currentIndex];
-				if (visibleItem && visibleItem.dataset?.itemId) {
-					const itemId = visibleItem.dataset.itemId;
-					const serverId = visibleItem.dataset.serverId;
-					console.log("[Spotlight] Play Button geklickt für Item:", itemId);
-					playItem(itemId, serverId, apiClient);
-				}
-			});
-		}
-		
+        // Play Button Click Handler
+        const playButtonOverlay = spotlight.querySelector('.play-button-overlay');
+        if (playButtonOverlay) {
+            playButtonOverlay.addEventListener("click", (e) => {
+                e.stopPropagation();
+                
+                const visibleItem = slider.children[currentIndex];
+                if (visibleItem && visibleItem.dataset?.itemId) {
+                    const itemId = visibleItem.dataset.itemId;
+                    const serverId = visibleItem.dataset.serverId;
+                    console.log("[Spotlight] Play Button geklickt für Item:", itemId);
+                    playItem(itemId, serverId, apiClient);
+                }
+            });
+        }
+        
         const bannerItems = slider.querySelectorAll('.banner-item');
         bannerItems.forEach(item => {
             item.style.cursor = 'pointer';
