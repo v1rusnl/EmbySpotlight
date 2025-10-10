@@ -366,6 +366,18 @@
 		max-height: 40vh;
 		overflow-y: auto;
 	}
+	@media (max-width: 768px), (orientation: portrait) {
+		.spotlight .banner-overview {
+			max-width: 85%;
+		}
+		
+		.spotlight .banner-overview-text {
+			font-size: clamp(0.9rem, 1.5vw, 1.1rem);
+			line-height: 1.4;
+			max-height: 25vh;
+			overflow-y: auto;
+		}
+	}
     .spotlight .banner-tagline {
         position: absolute;
         left: 50%;
@@ -496,6 +508,11 @@
     .spotlight .control.active { 
         background: white; 
     }
+	@media (max-width: 768px), (orientation: portrait) {
+		.spotlight .control {
+			display: none;
+		}
+	}
     .spotlight .loader { 
         position: absolute; 
         inset: 0; 
