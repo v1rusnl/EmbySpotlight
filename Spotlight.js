@@ -1,7 +1,7 @@
 /*!
  * Spotlight.js — Emby 4.9 compatible Spotlight slider
  * Source: built for sh0rty (10 items from random latest 100 items (Movies/TVShows)
- * Generated: 2025-10-08
+ * Generated: 2025-10-10
  */
 (function () {
     'use strict';
