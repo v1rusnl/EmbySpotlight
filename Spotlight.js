@@ -780,6 +780,69 @@
         .spotlight .mute-button:hover svg {
             filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.5));
         }
+
+		.spotlight .refresh-button {
+			position: absolute;
+			bottom: 11rem;
+			right: 2rem;
+			z-index: 25;
+			width: 50px;
+			height: 50px;
+			border-radius: 50%;
+			background: rgba(55, 55, 55, 0.3);
+			border: none;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			cursor: pointer;
+			transition: all 0.3s ease;
+			box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+			opacity: 0;
+			pointer-events: none;
+		}
+
+		.spotlight-container:hover .refresh-button.visible {
+			opacity: 1;
+			pointer-events: all;
+		}
+
+		.spotlight .refresh-button:hover {
+			transform: scale(1.02) rotate(180deg);
+			background: ${playbuttonColor};
+			box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+		}
+
+		.spotlight .refresh-button svg {
+			width: 24px;
+			height: 24px;
+			fill: #ffffff;
+			filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+			transition: filter 0.3s ease;
+		}
+
+		.spotlight .refresh-button:hover svg {
+			filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.5));
+		}
+
+		.spotlight .refresh-button.refreshing {
+			animation: spin 1s linear infinite;
+		}
+
+		@keyframes spin {
+			from {
+				transform: rotate(0deg);
+			}
+			to {
+				transform: rotate(360deg);
+			}
+		}
+
+		@media (max-width: 768px), (orientation: portrait) {
+			.spotlight .refresh-button {
+				bottom: calc(1rem + 100px + 1rem);
+				right: 1rem;
+			}
+		}
         
         .spotlight .arrow { 
             position: absolute; 
@@ -1462,6 +1525,12 @@
             : '<svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>';
         muteButton.setAttribute("aria-label", "Toggle Mute");
         spotlight.appendChild(muteButton);
+
+		const refreshButton = document.createElement("button");
+		refreshButton.className = "refresh-button visible";
+		refreshButton.innerHTML = '<svg viewBox="0 0 24 24"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>';
+		refreshButton.setAttribute("aria-label", "Refresh Items");
+		spotlight.appendChild(refreshButton);
         
         const controls = document.createElement("div");
         controls.className = "controls";
@@ -1489,7 +1558,8 @@
             sliderWrapper, 
             playButtonOverlay,
             pauseButton,
-            muteButton 
+            muteButton,
+			refreshButton
         };
     }
     
@@ -1837,9 +1907,45 @@
         
         return null;
     }
+
+	async function refreshSlideshow(apiClient, oldContainer) {
+		console.log("[Spotlight] Refreshing slideshow...");
+		
+		const refreshButton = document.querySelector('.spotlight .refresh-button');
+		if (refreshButton) {
+			refreshButton.classList.add('refreshing');
+		}
+		
+		pauseAllVideos();
+		
+		Object.keys(STATE.skipIntervals).forEach(itemId => {
+			stopSponsorBlockMonitoring(itemId);
+		});
+		
+		Object.values(STATE.videoPlayers).forEach(player => {
+			if (player.destroy && typeof player.destroy === 'function') {
+				player.destroy();
+			}
+		});
+		STATE.videoPlayers = {};
+		STATE.sponsorBlockSegments = {};
+		STATE.currentSlider = null;
+		
+		if (oldContainer) {
+			oldContainer.remove();
+		}
+		
+		try {
+			sessionStorage.removeItem('spotlight-current-index');
+		} catch (e) {}
+		
+		STATE.isInitializing = false;
+		
+		await init();
+	}
     
     function attachSliderBehavior(state, apiClient) {
-        const { slider, itemsCount, btnLeft, btnRight, controls, spotlight, pauseButton, muteButton } = state;
+        const { slider, itemsCount, btnLeft, btnRight, controls, spotlight, pauseButton, muteButton, refreshButton } = state;
         let currentIndex = 1;
         
         STATE.currentSlider = slider;
@@ -2143,6 +2249,17 @@
                 toggleMute();
             });
         }
+
+		if (refreshButton) {
+			refreshButton.addEventListener('click', async (e) => {
+				e.stopPropagation();
+				e.preventDefault();
+				console.log("[Spotlight] Refresh Button geklickt");
+				
+				const container = document.getElementById(SPOTLIGHT_CONTAINER_ID);
+				await refreshSlideshow(apiClient, container);
+			});
+		}
         
         let autoplayTimer = null;
         
@@ -2232,7 +2349,7 @@
             console.log(`[Spotlight] Items geladen: ${items.length}`);
             console.log("[Spotlight] CONFIG.limit:", CONFIG.limit);
             
-            const { container, spotlight, slider, btnLeft, btnRight, controls, pauseButton, muteButton } = await buildSlider(items, apiClient);
+            const { container, spotlight, slider, btnLeft, btnRight, controls, pauseButton, muteButton, refreshButton } = await buildSlider(items, apiClient);
             
             console.log("[Spotlight] Slider Children (inkl. Klone):", slider.children.length);
             console.log("[Spotlight] Item Count fuer Behavior:", items.length);
@@ -2247,7 +2364,7 @@
             const loader = container.querySelector(".loader");
             if (loader) loader.style.display = "none";
             
-            attachSliderBehavior({ slider, itemsCount: items.length, btnLeft, btnRight, controls, spotlight, pauseButton, muteButton }, apiClient);
+            attachSliderBehavior({ slider, itemsCount: items.length, btnLeft, btnRight, controls, spotlight, pauseButton, muteButton, refreshButton }, apiClient);
             
             console.log(`[Spotlight] Initialisiert mit ${items.length} Items`);
         } catch (err) {
