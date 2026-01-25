@@ -18,42 +18,25 @@ https://github.com/user-attachments/assets/268efab0-483d-4743-be19-894baa4ec022
  1. Download [Spotlight.js](https://github.com/v1rusnl/EmbySpotlight/blob/main/Spotlight.js) and optionally [spotlight-items.txt](https://github.com/v1rusnl/EmbySpotlight/blob/main/spotlight-items.txt), if you want to decide which items you want to present
  2. Change the following values in Spotlight.js to your needs
  
- a) limit variable (line 10) is for the amount of items from 100 latest the plugin shows in Spotlight in random order
+ a) limit: The amount of items from 50 latest the plugin shows in Spotlight in random order
  
  ```
  default = 10 items
  ```
 
- b) autoplayInterval variable (line 11) sets the amount of time how long an item is presented by Spotlight
+ b) autoplayInterval: The amount of time how long an item is presented by Spotlight if it has no Trailer (see enableVideoBackdrop and waitForTrailerToEnd variable)
 
  ```
- default = 8000ms (8s)
+ default = 10000ms (10s)
  ```
 
- c) backgroundColor variable (line 12) is for the gradient/vignette color at the inside edges of the spotlight and can be any supported value of: 
+ c) backgroundColor: The gradient/vignette color at the inside edges of the spotlight; can be any supported value of: 
  
 ```
-HEX: "#0000000" -> Emby Themes: Dark = #1e1e1e; Black = #000000; Light = #ffffff; Finimalism inspired = #090214; for other gradient themes like AppleTV or Blue Radiance take e.g. Windows Color Picker (WIN+SHIFT+C) and choose a color on the screen that makes you happy
+HEX: "#0000000" -> Emby Themes: Dark = #1e1e1e; Black = #000000; Light = #ffffff; Finimalism inspired = #0a0515; for other gradient themes like AppleTV or Blue Radiance take e.g. Windows Color Picker (WIN+SHIFT+C) and choose a color on the screen that makes you happy
 ```
-
- d) highlightColor variable (line 13) is for the border around the spotlight on hover and can be any valid value. e.g.: 
  
- ```
- HEX: "#0000000"
- rgb: "rgb(20 170 223)"
- rgba: "rgba(20 170 223, 0.2)"
- No border: "none"
- Emby Theme accent color: "hsl(var(--theme-primary-color-hue), var(--theme-primary-color-saturation), var(--theme-primary-color-lightness))"
- Finimalism Inspired: "var(--theme-primary-color)"
- ```
- 
- e) marginTop variable (line 14) controls the margin of the Spotlight to the top of the page
-
- ```
- Emby default themes = 9rem; Finimalism Inspired = 6rem
- ```
- 
- f) playbuttonColor variable (line 15) controls the color of the play button when hovering over it and can be any valid value. e.g.:
+ d) playbuttonColor: controls the color of the play button when hovering over it and can be any valid value. e.g.:
  
  ```
  HEX: "#0000000"
@@ -63,6 +46,20 @@ HEX: "#0000000" -> Emby Themes: Dark = #1e1e1e; Black = #000000; Light = #ffffff
  Emby accent color: "hsl(var(--theme-primary-color-hue), var(--theme-primary-color-saturation), var(--theme-primary-color-lightness))"
  Finimalism Inspired: "var(--theme-primary-color)"
  ```
+ 
+ e) enableVideoBackdrop: true|false -> enables/disbales Trailer playback
+ 
+ f) startMuted: true|false -> controls if Trailers start muted or not
+ 
+ g) videoVolume: Audio Volume of Trailers
+ 
+ h) waitForTrailerToEnd: true|false -> Respect autoplayInterval even an item has a Trailer
+ 
+ i) enableMobileVideo: true|false -> Enables Trailer playback in mobile views
+ 
+ j) preferredVideoQuality: hd720|hd1080|highres -> Video Quality of Trailer playback, hd720 should be sufficient in most cases due to image masking
+ 
+ k) enableSponsorBlock: true|false -> Enbale SponsorBlock api
  
  3. Optional: Add IDs of the items you want to present into spotlight-items.txt like this:
  <img width="326" height="155" alt="image" src="https://github.com/user-attachments/assets/6f48bf50-7477-4378-af0c-6f4f1f9064ee" />
@@ -74,13 +71,6 @@ HEX: "#0000000" -> Emby Themes: Dark = #1e1e1e; Black = #000000; Light = #ffffff
  
  6. Clear Cache and hard reload Emby Web
 
-## Usage
- - Spotlight Banner switches between items automatically in the set up time frame (default 8s)
- - Hover over the Banner to see the Play-Button and click it to watch the item
- - Click the Logoart to see the Plot overview, click the Plot overview to see the Logo again (switches automatically back to logo when changing item)
- - Use the Left-/Right-Arrows to jump between items
-
-    
 ## License
 
 [MIT](https://github.com/v1rusnl/EmbySpotlight/blob/main/LICENSE)
