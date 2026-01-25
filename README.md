@@ -3,13 +3,12 @@
 
 A Spotlight banner for Emby Media Server
 
-https://github.com/user-attachments/assets/268efab0-483d-4743-be19-894baa4ec022
-
+<img alt="image" src="https://github.com/user-attachments/assets/11a3a583-5af1-48f2-904f-642aa30bc49a" />
 
 
 ### First and foremost:
 - This is vibe-coded with the help of Claude Sonnet 4.5 and just a proof of concept
-- Tested with stable Server 4.9.1.80 on a 1080p-Screen
+- Tested with stable Server 4.9.0.30 on a 1080p-Screen
 - This Banner just works on the Web Client
 
 
