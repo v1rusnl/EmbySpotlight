@@ -10,12 +10,14 @@ A Spotlight banner for Emby Media Server
 - This is vibe-coded with the help of Claude Sonnet 4.5 and just a proof of concept
 - Tested with stable Server 4.9.0.30 on a 1080p-Screen
 - This Banner just works on the Web Client
+- Big thanks to @Druidblack for the ratings codebase
 
 
 ## Installation
 
- 1. Download [Spotlight.js](https://github.com/v1rusnl/EmbySpotlight/blob/main/Spotlight.js) and optionally [spotlight-items.txt](https://github.com/v1rusnl/EmbySpotlight/blob/main/spotlight-items.txt), if you want to decide which items you want to present
- 2. Change the following values in Spotlight.js to your needs
+ 1. Download [Spotlight.js](https://github.com/v1rusnl/EmbySpotlight/blob/main/Spotlight.js) and optionally [spotlight-items.txt](https://github.com/v1rusnl/EmbySpotlight/blob/main/spotlight-items.txt), if you want to decide which items you want to present to users
+ 2. Set up you MDBLIST_API_KEY and TMDB_API_KEY in line 73-74 -> The keys are needed for the custom ratings
+ 3. Change the following values (line 53-69) to your needs
  
  a) limit: The amount of items from 50 latest the plugin shows in Spotlight in random order
  
@@ -58,7 +60,7 @@ HEX: "#0000000" -> Emby Themes: Dark = #1e1e1e; Black = #000000; Light = #ffffff
  
  j) preferredVideoQuality: hd720|hd1080|highres -> Video Quality of Trailer playback, hd720 should be sufficient in most cases due to image masking
  
- k) enableSponsorBlock: true|false -> Enbale SponsorBlock api
+ k) enableSponsorBlock: true|false -> Enable SponsorBlock api
  
  3. Optional: Add IDs of the items you want to present into spotlight-items.txt like this:
  <img width="326" height="155" alt="image" src="https://github.com/user-attachments/assets/6f48bf50-7477-4378-af0c-6f4f1f9064ee" />

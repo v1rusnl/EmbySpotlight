@@ -1,9 +1,52 @@
 /*!
- * Spotlight.js — Emby 4.9 compatible Spotlight slider with Video Backdrop Support
- * Source: built by sh0rty
- * Enhanced with: YouTube Trailer Backgrounds, HTML5 Video Support, SponsorBlock Integration
- * Generated: 2026-01-25
+ * Spotlight.js — Emby 4.9 compatible Spotlight slider with Video Backdrop Support & Custom Ratings
+ * Enhanced with: YouTube Trailers, HTML5 Video, SponsorBlock, Custom Ratings (IMDb, RT, Metacritic, etc.) - Big thanks to https://github.com/Druidblack/jellyfin_ratings/tree/main
+ * Generated: 2026-01-27
  */
+
+if (typeof GM_xmlhttpRequest === 'undefined') {
+    const PROXIES = [
+        'https://api.allorigins.win/raw?url=',
+        'https://api.codetabs.com/v1/proxy?quest='
+    ];
+    const DIRECT_DOMAINS = [
+        'api.mdblist.com',
+        'graphql.anilist.co',
+        'query.wikidata.org',
+        'www.google.com',
+        'api.themoviedb.org'
+    ];
+    
+    window.GM_xmlhttpRequest = function({ method = 'GET', url, headers = {}, data, onload, onerror }) {
+        const isDirect = DIRECT_DOMAINS.some(d => url.includes(d));
+        let fetchUrl;
+        
+        if (isDirect) {
+            fetchUrl = url;
+        } else {
+            const proxy = PROXIES[Math.floor(Math.random() * PROXIES.length)];
+            const sep = url.includes('?') ? '&' : '?';
+            const bump = `_=${Date.now()}`;
+            fetchUrl = proxy + encodeURIComponent(url + sep + bump);
+        }
+        
+        fetch(fetchUrl, {
+            method,
+            headers,
+            body: data,
+            cache: 'no-store'
+        })
+        .then(response =>
+            response.text().then(text =>
+                onload({ status: response.status, responseText: text })
+            )
+        )
+        .catch(err => {
+            if (typeof onerror === 'function') onerror(err);
+        });
+    };
+}
+
 (function () {
     'use strict';
     
@@ -16,27 +59,51 @@
         customItemsFile: "spotlight-items.txt",
         
         enableVideoBackdrop: true,
-        startMuted: false,
+        startMuted: true,
         videoVolume: 0.4,
         waitForTrailerToEnd: true,
         enableMobileVideo: false,
         preferredVideoQuality: "hd720",
         
         enableSponsorBlock: true,
-        sponsorBlockCategories: ["sponsor", "intro", "outro", "selfpromo", "interaction"]
+        sponsorBlockCategories: ["sponsor", "intro", "outro", "selfpromo", "interaction"],
+        
+        // Custom Ratings Config
+        enableCustomRatings: true,
+        MDBLIST_API_KEY: 'YOUR_API_KEY',
+        TMDB_API_KEY: 'YOUR_API_KEY'
     };
     
-	const STATE = {
-		videoPlayers: {},
-		isMuted: CONFIG.startMuted,
-		isPaused: false,
-		currentSlideIndex: 0,
-		youtubeAPIReady: false,
-		sponsorBlockSegments: {},
-		skipIntervals: {},
-		currentSlider: null,
-		isInitializing: false
-	};
+    const LOGO = {
+        imdb: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/IMDb.png',
+        tmdb: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/TMDB.png',
+        tomatoes: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/Rotten_Tomatoes.png',
+        tomatoes_rotten: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/Rotten_Tomatoes_rotten.png',
+        tomatoes_certified: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/rotten-tomatoes-certified.png',
+        audience: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/Rotten_Tomatoes_positive_audience.png',
+        audience_rotten: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/Rotten_Tomatoes_negative_audience.png',
+        rotten_ver: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/roten_tomatoes_ver.png',
+        metacritic: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/Metacritic.png',
+        metacriticms: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/metacriticms.png',
+        metacriticus: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/mus2.png',
+        trakt: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/Trakt.png',
+        letterboxd: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/letterboxd.png',
+        myanimelist: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/mal.png',
+        anilist: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/anilist.png'
+    };
+    
+    const STATE = {
+        videoPlayers: {},
+        isMuted: CONFIG.startMuted,
+        isPaused: false,
+        currentSlideIndex: 0,
+        youtubeAPIReady: false,
+        sponsorBlockSegments: {},
+        skipIntervals: {},
+        currentSlider: null,
+        isInitializing: false,
+        ratingsCache: {}
+    };
     
     const SPOTLIGHT_CONTAINER_ID = 'emby-spotlight-slider-container';
     
@@ -104,6 +171,354 @@
             return `${hours}h ${mins}min`;
         }
         return `${mins}min`;
+    }
+    
+    function getImdbId(item) {
+        if (item.ProviderIds?.Imdb) {
+            return item.ProviderIds.Imdb;
+        }
+        return null;
+    }
+    
+    function getTmdbId(item) {
+        if (item.ProviderIds?.Tmdb) {
+            return item.ProviderIds.Tmdb;
+        }
+        return null;
+    }
+    
+    function fetchMDBListRatings(type, tmdbId, item) {
+        return new Promise((resolve) => {
+            if (!CONFIG.enableCustomRatings || !tmdbId) {
+                resolve(null);
+                return;
+            }
+            
+            const cacheKey = `mdb_${type}_${tmdbId}`;
+            if (STATE.ratingsCache[cacheKey]) {
+                resolve(STATE.ratingsCache[cacheKey]);
+                return;
+            }
+            
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: `https://api.mdblist.com/tmdb/${type}/${tmdbId}?apikey=${CONFIG.MDBLIST_API_KEY}`,
+                onload(res) {
+                    if (res.status !== 200) {
+                        resolve(null);
+                        return;
+                    }
+                    let data;
+                    try { data = JSON.parse(res.responseText); }
+                    catch (e) { 
+                        resolve(null);
+                        return;
+                    }
+                    
+                    const ratings = [];
+                    
+                    if (Array.isArray(data.ratings)) {
+                        data.ratings.forEach(r => {
+                            if (r.value == null) return;
+                            
+                            let key = r.source.toLowerCase().replace(/\s+/g, '_');
+                            
+                            if (key === 'tomatoes') key = r.value < 60 ? 'tomatoes_rotten' : 'tomatoes';
+                            else if (key.includes('popcorn')) key = r.value < 60 ? 'audience_rotten' : 'audience';
+                            else if (key.includes('metacritic') && !key.includes('user')) {
+                                key = (r.value >= 81) ? 'metacriticms' : 'metacritic';
+                            }
+                            else if (key.includes('metacritic') && key.includes('user')) key = 'metacriticus';
+                            else if (key.includes('trakt')) key = 'trakt';
+                            else if (key.includes('letterboxd')) key = 'letterboxd';
+                            else if (key.includes('myanimelist')) key = 'myanimelist';
+                            
+                            const logoUrl = LOGO[key];
+                            if (!logoUrl) return;
+                            
+                            ratings.push({
+                                source: r.source,
+                                value: r.value,
+                                key: key,
+                                logo: logoUrl
+                            });
+                        });
+                    }
+                    
+                    const result = {
+                        ratings: ratings,
+                        originalTitle: data.original_title || data.title || '',
+                        year: data.year || ''
+                    };
+                    
+                    STATE.ratingsCache[cacheKey] = result;
+                    resolve(result);
+                },
+                onerror() {
+                    resolve(null);
+                }
+            });
+        });
+    }
+    
+    function fetchRTCertified(imdbId) {
+        return new Promise((resolve) => {
+            if (!imdbId) {
+                resolve(false);
+                return;
+            }
+            
+            const sparql = `
+                SELECT ?rtid WHERE {
+                    ?item wdt:P345 "${imdbId}" .
+                    ?item wdt:P1258 ?rtid .
+                } LIMIT 1`;
+            
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: 'https://query.wikidata.org/sparql?format=json&query=' + encodeURIComponent(sparql),
+                onload(res) {
+                    if (res.status !== 200) {
+                        resolve(false);
+                        return;
+                    }
+                    let json;
+                    try { json = JSON.parse(res.responseText); } catch { 
+                        resolve(false);
+                        return;
+                    }
+                    const b = json.results.bindings;
+                    if (!b.length || !b[0].rtid.value) {
+                        resolve(false);
+                        return;
+                    }
+                    const id = b[0].rtid.value;
+                    const rtUrl = id.startsWith('http') ? id : 'https://www.rottentomatoes.com/' + id;
+                    
+                    GM_xmlhttpRequest({
+                        method: 'GET',
+                        url: rtUrl,
+                        onload(r) {
+                            if (r.status !== 200) {
+                                resolve(false);
+                                return;
+                            }
+                            const m = r.responseText.match(/<script\s+id="media-scorecard-json"[^>]*>([\s\S]*?)<\/script>/);
+                            if (!m) {
+                                resolve(false);
+                                return;
+                            }
+                            let obj;
+                            try { obj = JSON.parse(m[1]); } catch { 
+                                resolve(false);
+                                return;
+                            }
+                            resolve(!!(obj.criticsScore && obj.criticsScore.certified));
+                        },
+                        onerror: () => resolve(false)
+                    });
+                },
+                onerror: () => resolve(false)
+            });
+        });
+    }
+    
+    function fetchRTAudienceCertified(imdbId) {
+        return new Promise((resolve) => {
+            if (!imdbId) {
+                resolve(false);
+                return;
+            }
+            
+            const sparql = `
+                SELECT ?rtid WHERE {
+                    ?item wdt:P345 "${imdbId}" .
+                    ?item wdt:P1258 ?rtid .
+                } LIMIT 1`;
+            
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: 'https://query.wikidata.org/sparql?format=json&query=' + encodeURIComponent(sparql),
+                onload(res) {
+                    if (res.status !== 200) {
+                        resolve(false);
+                        return;
+                    }
+                    let json;
+                    try { json = JSON.parse(res.responseText); } catch { 
+                        resolve(false);
+                        return;
+                    }
+                    const b = json.results.bindings;
+                    if (!b.length || !b[0].rtid.value) {
+                        resolve(false);
+                        return;
+                    }
+                    const id = b[0].rtid.value;
+                    const rtUrl = id.startsWith('http') ? id : 'https://www.rottentomatoes.com/' + id;
+                    
+                    GM_xmlhttpRequest({
+                        method: 'GET',
+                        url: rtUrl,
+                        onload(r) {
+                            if (r.status !== 200) {
+                                resolve(false);
+                                return;
+                            }
+                            const m = r.responseText.match(/<script\s+id="media-scorecard-json"[^>]*>([\s\S]*?)<\/script>/);
+                            if (!m) {
+                                resolve(false);
+                                return;
+                            }
+                            const jsonStr = m[1];
+                            resolve(jsonStr.includes('POSITIVE","certified":true'));
+                        },
+                        onerror: () => resolve(false)
+                    });
+                },
+                onerror: () => resolve(false)
+            });
+        });
+    }
+    
+    function getAnilistId(imdbId) {
+        return new Promise((resolve) => {
+            if (!imdbId) {
+                resolve(null);
+                return;
+            }
+            
+            const sparql = `
+                SELECT ?anilist WHERE {
+                    ?item wdt:P345 "${imdbId}" .
+                    ?item wdt:P8729 ?anilist .
+                } LIMIT 1`;
+            
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: 'https://query.wikidata.org/sparql?format=json&query=' + encodeURIComponent(sparql),
+                onload(res) {
+                    if (res.status !== 200) {
+                        resolve(null);
+                        return;
+                    }
+                    let json;
+                    try { json = JSON.parse(res.responseText); }
+                    catch { 
+                        resolve(null);
+                        return;
+                    }
+                    const b = json.results.bindings;
+                    resolve(b.length && b[0].anilist?.value ? b[0].anilist.value : null);
+                },
+                onerror: () => resolve(null)
+            });
+        });
+    }
+    
+    function queryAniListById(id) {
+        return new Promise((resolve) => {
+            const query = `
+                query($id:Int){
+                    Media(id:$id,type:ANIME){
+                        id meanScore
+                    }
+                }`;
+            
+            GM_xmlhttpRequest({
+                method: 'POST',
+                url: 'https://graphql.anilist.co',
+                headers: {'Content-Type':'application/json'},
+                data: JSON.stringify({ query, variables: { id: parseInt(id, 10) } }),
+                onload(res) {
+                    if (res.status !== 200) {
+                        resolve(null);
+                        return;
+                    }
+                    let json;
+                    try { json = JSON.parse(res.responseText); }
+                    catch { 
+                        resolve(null);
+                        return;
+                    }
+                    const m = json.data?.Media;
+                    if (m?.meanScore > 0) {
+                        resolve({ id: m.id, score: m.meanScore });
+                    } else {
+                        resolve(null);
+                    }
+                },
+                onerror: () => resolve(null)
+            });
+        });
+    }
+    
+    function queryAniListBySearch(title, year) {
+        return new Promise((resolve) => {
+            const query = `
+                query($search:String,$startDate:FuzzyDateInt,$endDate:FuzzyDateInt){
+                    Media(
+                        search:$search,
+                        type:ANIME,
+                        startDate_greater:$startDate,
+                        startDate_lesser:$endDate
+                    ){
+                        id meanScore title { romaji english native } startDate { year }
+                    }
+                }`;
+            
+            const vars = {
+                search: title,
+                startDate: parseInt(`${year}0101`, 10),
+                endDate: parseInt(`${year+1}0101`, 10)
+            };
+            
+            GM_xmlhttpRequest({
+                method: 'POST',
+                url: 'https://graphql.anilist.co',
+                headers: {'Content-Type':'application/json'},
+                data: JSON.stringify({ query, variables: vars }),
+                onload(res) {
+                    if (res.status !== 200) {
+                        resolve(null);
+                        return;
+                    }
+                    let json;
+                    try { json = JSON.parse(res.responseText); }
+                    catch { 
+                        resolve(null);
+                        return;
+                    }
+                    const m = json.data?.Media;
+                    if (m?.meanScore > 0 && m.startDate?.year === year) {
+                        const norm = s => s.toLowerCase().trim();
+                        const t0 = norm(title);
+                        const titles = [m.title.romaji, m.title.english, m.title.native]
+                            .filter(Boolean).map(norm);
+                        if (titles.includes(t0)) {
+                            resolve({ id: m.id, score: m.meanScore });
+                        } else {
+                            resolve(null);
+                        }
+                    } else {
+                        resolve(null);
+                    }
+                },
+                onerror: () => resolve(null)
+            });
+        });
+    }
+    
+    async function fetchAniListRating(imdbId, originalTitle, year) {
+        if (!imdbId) return null;
+        
+        const anilistId = await getAnilistId(imdbId);
+        if (anilistId) {
+            return await queryAniListById(anilistId);
+        } else if (originalTitle && year) {
+            return await queryAniListBySearch(originalTitle, parseInt(year, 10));
+        }
+        return null;
     }
     
     async function fetchSponsorBlockSegments(videoId) {
@@ -275,7 +690,6 @@
             margin-top: 0;
             margin-left: 0;
             margin-right: 0;
-            margin-bottom: -65px;
             padding: 0;
             transition: box-shadow 0.3s ease;
             border-radius: 0;
@@ -398,18 +812,18 @@
             pointer-events: none;
             z-index: 6;
             background: linear-gradient(to right, 
- 				${rgbaColor} 0%, 
-				${rgbaColor} 2%,
-				${rgbaColor} 4%,
-				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.99) 6%,
-				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.97) 8%,
-				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.95) 10%,
-				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.9) 15%,
-				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.85) 20%,
-				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.75) 30%,
-				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.6) 40%,
-				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.4) 50%,
-				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.2) 70%,
+                 ${rgbaColor} 0%, 
+                ${rgbaColor} 2%,
+                ${rgbaColor} 4%,
+                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.99) 6%,
+                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.97) 8%,
+                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.95) 10%,
+                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.9) 15%,
+                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.85) 20%,
+                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.75) 30%,
+                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.6) 40%,
+                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.4) 50%,
+                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.2) 70%,
                 transparent 100%);
         }
         
@@ -422,68 +836,67 @@
             pointer-events: none;
             z-index: 6;
             background: linear-gradient(to left, 
-				${rgbaColor} 0%, 
-				${rgbaColor} 2%,
-				${rgbaColor} 4%,
-				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.99) 6%,
-				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.97) 8%,
-				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.95) 10%,
-				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.9) 15%,
-				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.85) 20%,
-				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.75) 30%,
-				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.6) 40%,
-				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.4) 50%,
-				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.2) 70%,
+                ${rgbaColor} 0%, 
+                ${rgbaColor} 2%,
+                ${rgbaColor} 4%,
+                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.99) 6%,
+                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.97) 8%,
+                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.95) 10%,
+                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.9) 15%,
+                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.85) 20%,
+                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.75) 30%,
+                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.6) 40%,
+                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.4) 50%,
+                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.2) 70%,
                 transparent 100%);
         }
         
         .spotlight .banner-vignette-top {
-			position: absolute;
-			top: 0;
-			left: 0;
-			right: 0;
-			height: 50%;
-			background: linear-gradient(to bottom, 
-				${rgbaColor} 0%, 
-				${rgbaColor} 2%,
-				${rgbaColor} 4%,
-				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.99) 6%,
-				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.97) 8%,
-				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.95) 10%,
-				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.9) 15%,
-				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.85) 20%,
-				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.75) 30%,
-				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.6) 40%,
-				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.4) 50%,
-				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.2) 70%,
-				transparent 100%);
-			pointer-events: none;
-			z-index: 6;
-		}
-
-		.spotlight .banner-vignette-bottom {
-			position: absolute;
-			bottom: 0;
-			left: 0;
-			right: 0;
-			height: 50%;
-			background: linear-gradient(to top, 
-				${rgbaColor} 0%, 
-				${rgbaColor} 2%,
-				${rgbaColor} 4%,
-				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.99) 6%,
-				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.97) 8%,
-				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.95) 10%,
-				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.9) 15%,
-				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.85) 20%,
-				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.75) 30%,
-				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.6) 40%,
-				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.4) 50%,
-				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.2) 70%,
-				transparent 100%);
-			pointer-events: none;
-			z-index: 6;
-		}
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 50%;
+            background: linear-gradient(to bottom, 
+                ${rgbaColor} 0%, 
+                ${rgbaColor} 2%,
+                ${rgbaColor} 4%,
+                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.99) 6%,
+                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.97) 8%,
+                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.95) 10%,
+                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.9) 15%,
+                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.85) 20%,
+                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.75) 30%,
+                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.6) 40%,
+                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.4) 50%,
+                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.2) 70%,
+                transparent 100%);
+            pointer-events: none;
+            z-index: 6;
+        }
+        .spotlight .banner-vignette-bottom {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 50%;
+            background: linear-gradient(to top, 
+                ${rgbaColor} 0%, 
+                ${rgbaColor} 2%,
+                ${rgbaColor} 4%,
+                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.99) 6%,
+                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.97) 8%,
+                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.95) 10%,
+                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.9) 15%,
+                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.85) 20%,
+                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.75) 30%,
+                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.6) 40%,
+                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.4) 50%,
+                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.2) 70%,
+                transparent 100%);
+            pointer-events: none;
+            z-index: 6;
+        }
         
         .spotlight .banner-logo {
             position: absolute;
@@ -555,16 +968,16 @@
             overflow: hidden;
             text-overflow: ellipsis;
         }
-		
-		@media (max-width: 890px), (orientation: portrait) {
-			.spotlight .banner-overview {
-				visibility: hidden;
-			}
-			
-			.spotlight .banner-overview-text {
-				visibility: hidden;
-			}
-		}
+        
+        @media (max-width: 1600px), (orientation: portrait) {
+            .spotlight .banner-overview {
+                visibility: hidden;
+            }
+            
+            .spotlight .banner-overview-text {
+                visibility: hidden;
+            }
+        }
         
         .spotlight .banner-tagline {
             display: none !important;
@@ -640,6 +1053,33 @@
         
         .spotlight .meta-rating-score {
             font-size: clamp(1.1rem, 1.8vw, 1.4rem);
+            font-weight: 500;
+            color: rgba(255,255,255,0.85);
+            text-shadow: 1px 1px 4px rgba(0,0,0,0.9);
+        }
+        
+        .spotlight .custom-ratings-container {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        
+        .spotlight .custom-rating-item {
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+        
+        .spotlight .custom-rating-logo {
+            height: 1.6rem;
+            width: auto;
+            object-fit: contain;
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.8));
+        }
+        
+        .spotlight .custom-rating-value {
+            font-size: clamp(1rem, 1.6vw, 1.3rem);
             font-weight: 500;
             color: rgba(255,255,255,0.85);
             text-shadow: 1px 1px 4px rgba(0,0,0,0.9);
@@ -780,69 +1220,61 @@
         .spotlight .mute-button:hover svg {
             filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.5));
         }
-
-		.spotlight .refresh-button {
-			position: absolute;
-			bottom: 11rem;
-			right: 2rem;
-			z-index: 25;
-			width: 50px;
-			height: 50px;
-			border-radius: 50%;
-			background: rgba(55, 55, 55, 0.3);
-			border: none;
-			display: flex;
-			align-items: center;
-			justify-content: center;
-			cursor: pointer;
-			transition: all 0.3s ease;
-			box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-			opacity: 0;
-			pointer-events: none;
-		}
-
-		.spotlight-container:hover .refresh-button.visible {
-			opacity: 1;
-			pointer-events: all;
-		}
-
-		.spotlight .refresh-button:hover {
-			transform: scale(1.02) rotate(180deg);
-			background: ${playbuttonColor};
-			box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
-		}
-
-		.spotlight .refresh-button svg {
-			width: 24px;
-			height: 24px;
-			fill: #ffffff;
-			filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
-			transition: filter 0.3s ease;
-		}
-
-		.spotlight .refresh-button:hover svg {
-			filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.5));
-		}
-
-		.spotlight .refresh-button.refreshing {
-			animation: spin 1s linear infinite;
-		}
-
-		@keyframes spin {
-			from {
-				transform: rotate(0deg);
-			}
-			to {
-				transform: rotate(360deg);
-			}
-		}
-
-		@media (max-width: 768px), (orientation: portrait) {
-			.spotlight .refresh-button {
-				bottom: calc(1rem + 100px + 1rem);
-				right: 1rem;
-			}
-		}
+        .spotlight .refresh-button {
+            position: absolute;
+            bottom: 11rem;
+            right: 2rem;
+            z-index: 25;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: rgba(55, 55, 55, 0.3);
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+            opacity: 0;
+            pointer-events: none;
+        }
+        .spotlight-container:hover .refresh-button.visible {
+            opacity: 1;
+            pointer-events: all;
+        }
+        .spotlight .refresh-button:hover {
+            transform: scale(1.02) rotate(180deg);
+            background: ${playbuttonColor};
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+        }
+        .spotlight .refresh-button svg {
+            width: 24px;
+            height: 24px;
+            fill: #ffffff;
+            filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+            transition: filter 0.3s ease;
+        }
+        .spotlight .refresh-button:hover svg {
+            filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.5));
+        }
+        .spotlight .refresh-button.refreshing {
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            from {
+                transform: rotate(0deg);
+            }
+            to {
+                transform: rotate(360deg);
+            }
+        }
+        @media (max-width: 768px), (orientation: portrait) {
+            .spotlight .refresh-button {
+                bottom: calc(1rem + 100px + 1rem);
+                right: 1rem;
+            }
+        }
         
         .spotlight .arrow { 
             position: absolute; 
@@ -982,7 +1414,7 @@
             EnableImageTypes: "Primary,Backdrop,Thumb,Logo,Banner",
             EnableUserData: false,
             EnableTotalRecordCount: false,
-            Fields: "PrimaryImageAspectRatio,BackdropImageTags,ImageTags,ParentLogoImageTag,ParentLogoItemId,CriticRating,CommunityRating,OfficialRating,PremiereDate,ProductionYear,Genres,RunTimeTicks,Taglines,Overview,RemoteTrailers,LocalTrailerIds"
+            Fields: "PrimaryImageAspectRatio,BackdropImageTags,ImageTags,ParentLogoImageTag,ParentLogoItemId,CriticRating,CommunityRating,OfficialRating,PremiereDate,ProductionYear,Genres,RunTimeTicks,Taglines,Overview,RemoteTrailers,LocalTrailerIds,ProviderIds"
         };
     }
     
@@ -1064,7 +1496,7 @@
                                 ParentId: itemId,
                                 Recursive: true,
                                 IncludeItemTypes: "Movie,Series",
-                                Fields: "PrimaryImageAspectRatio,BackdropImageTags,ImageTags,ParentLogoImageTag,ParentLogoItemId,CriticRating,CommunityRating,OfficialRating,PremiereDate,ProductionYear,Genres,RunTimeTicks,Taglines,Overview,RemoteTrailers,LocalTrailerIds"
+                                Fields: "PrimaryImageAspectRatio,BackdropImageTags,ImageTags,ParentLogoImageTag,ParentLogoItemId,CriticRating,CommunityRating,OfficialRating,PremiereDate,ProductionYear,Genres,RunTimeTicks,Taglines,Overview,RemoteTrailers,LocalTrailerIds,ProviderIds"
                             });
                             
                             if (collectionItems && collectionItems.Items) {
@@ -1115,72 +1547,116 @@
         return fetchStandardItems(apiClient);
     }
     
-    function createInfoElement(item) {
-        const infoContainer = document.createElement("div");
-        infoContainer.className = "banner-info";
-        
-        if (item.Genres && item.Genres.length > 0) {
-            const genresDiv = document.createElement("div");
-            genresDiv.className = "banner-genres";
-            const genresToShow = item.Genres.slice(0, 3);
-            genresToShow.forEach(genre => {
-                const genreSpan = document.createElement("span");
-                genreSpan.className = "banner-genre";
-                genreSpan.textContent = genre;
-                genresDiv.appendChild(genreSpan);
-            });
-            infoContainer.appendChild(genresDiv);
-        }
-        
-        const metaDiv = document.createElement("div");
-        metaDiv.className = "banner-meta";
-        
-        if (item.ProductionYear) {
-            const yearSpan = document.createElement("span");
-            yearSpan.className = "banner-meta-item";
-            yearSpan.textContent = item.ProductionYear;
-            metaDiv.appendChild(yearSpan);
-        }
-        
-        if (item.CriticRating !== null && item.CriticRating !== undefined) {
-            const rtRating = document.createElement("div");
-            rtRating.className = "meta-rating-item banner-meta-item";
-            const isFresh = item.CriticRating >= 60;
-            const tomatoImg = isFresh ? 'fresh.png' : 'rotten.png';
-            
-            rtRating.innerHTML = `
-                <img src="modules/mediainfo/${tomatoImg}" class="meta-rating-icon" alt="Rotten Tomatoes">
-                <span class="meta-rating-score">${item.CriticRating}%</span>
-            `;
-            metaDiv.appendChild(rtRating);
-        }
-        
-        if (item.CommunityRating) {
-            const imdbRating = document.createElement("div");
-            imdbRating.className = "meta-rating-item banner-meta-item";
-            imdbRating.innerHTML = `
-                <svg class="meta-rating-star" viewBox="0 0 24 24">
-                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
-                </svg>
-                <span class="meta-rating-score">${item.CommunityRating.toFixed(1)}</span>
-            `;
-            metaDiv.appendChild(imdbRating);
-        }
-        
-        if (item.RunTimeTicks) {
-            const runtimeMinutes = Math.round(item.RunTimeTicks / 600000000);
-            const runtimeSpan = document.createElement("span");
-            runtimeSpan.className = "banner-meta-item";
-            runtimeSpan.textContent = formatRuntime(runtimeMinutes);
-            metaDiv.appendChild(runtimeSpan);
-        }
-        
-        if (metaDiv.children.length > 0) {
-            infoContainer.appendChild(metaDiv);
-        }
-        
-        return infoContainer.children.length > 0 ? infoContainer : null;
-    }
+	async function createInfoElement(item) {
+		const infoContainer = document.createElement("div");
+		infoContainer.className = "banner-info";
+		
+		if (item.Genres && item.Genres.length > 0) {
+			const genresDiv = document.createElement("div");
+			genresDiv.className = "banner-genres";
+			const genresToShow = item.Genres.slice(0, 3);
+			genresToShow.forEach(genre => {
+				const genreSpan = document.createElement("span");
+				genreSpan.className = "banner-genre";
+				genreSpan.textContent = genre;
+				genresDiv.appendChild(genreSpan);
+			});
+			infoContainer.appendChild(genresDiv);
+		}
+		
+		const metaDiv = document.createElement("div");
+		metaDiv.className = "banner-meta";
+		
+		if (item.ProductionYear) {
+			const yearSpan = document.createElement("span");
+			yearSpan.className = "banner-meta-item";
+			yearSpan.textContent = item.ProductionYear;
+			metaDiv.appendChild(yearSpan);
+		}
+		
+		if (item.RunTimeTicks) {
+			const runtimeMinutes = Math.round(item.RunTimeTicks / 600000000);
+			const runtimeSpan = document.createElement("span");
+			runtimeSpan.className = "banner-meta-item";
+			runtimeSpan.textContent = formatRuntime(runtimeMinutes);
+			metaDiv.appendChild(runtimeSpan);
+		}
+		
+		if (CONFIG.enableCustomRatings) {
+			const tmdbId = getTmdbId(item);
+			const imdbId = getImdbId(item);
+			const type = item.Type === 'Series' ? 'show' : 'movie';
+			
+			if (tmdbId) {
+				fetchMDBListRatings(type, tmdbId, item).then(async (ratingsData) => {
+					if (!ratingsData) return;
+					
+					ratingsData.ratings.forEach(rating => {
+						const ratingItem = document.createElement("div");
+						ratingItem.className = "custom-rating-item";
+						
+						const img = document.createElement("img");
+						img.src = rating.logo;
+						img.alt = rating.source;
+						img.className = "custom-rating-logo";
+						img.title = `${rating.source}: ${rating.value}`;
+						
+						const value = document.createElement("span");
+						value.className = "custom-rating-value";
+						value.textContent = rating.value;
+						
+						ratingItem.appendChild(img);
+						ratingItem.appendChild(value);
+						metaDiv.appendChild(ratingItem);
+					});
+					
+					if (imdbId) {
+						const isCertified = await fetchRTCertified(imdbId);
+						if (isCertified) {
+							const tomatoImg = metaDiv.querySelector('img[alt*="Tomatoes"]:not([alt*="Popcorn"])');
+							if (tomatoImg && !tomatoImg.src.includes('certified')) {
+								tomatoImg.src = LOGO.tomatoes_certified;
+							}
+						}
+						
+						const isAudienceCertified = await fetchRTAudienceCertified(imdbId);
+						if (isAudienceCertified) {
+							const audienceImg = metaDiv.querySelector('img[alt*="Popcorn"]');
+							if (audienceImg) {
+								audienceImg.src = LOGO.rotten_ver;
+							}
+						}
+						
+						const anilistRating = await fetchAniListRating(imdbId, ratingsData.originalTitle, ratingsData.year);
+						if (anilistRating && anilistRating.score) {
+							const ratingItem = document.createElement("div");
+							ratingItem.className = "custom-rating-item";
+							
+							const img = document.createElement("img");
+							img.src = LOGO.anilist;
+							img.alt = "AniList";
+							img.className = "custom-rating-logo";
+							img.title = `AniList: ${anilistRating.score}`;
+							
+							const value = document.createElement("span");
+							value.className = "custom-rating-value";
+							value.textContent = anilistRating.score;
+							
+							ratingItem.appendChild(img);
+							ratingItem.appendChild(value);
+							metaDiv.appendChild(ratingItem);
+						}
+					}
+				});
+			}
+		}
+		
+		if (metaDiv.children.length > 0) {
+			infoContainer.appendChild(metaDiv);
+		}
+		
+		return infoContainer.children.length > 0 ? infoContainer : null;
+	}
     
     function createImageBackdrop(item, apiClient) {
         const img = document.createElement("img");
@@ -1193,26 +1669,26 @@
         return img;
     }
     
-	async function createYouTubeBackdrop(item, videoId, apiClient, loadSponsorBlockNow = false) {
-		if (!videoId) {
-			return createImageBackdrop(item, apiClient);
-		}
-		
-		if (CONFIG.enableSponsorBlock && loadSponsorBlockNow) {
-			const segments = await fetchSponsorBlockSegments(videoId);
-			if (segments.length > 0) {
-				STATE.sponsorBlockSegments[videoId] = segments;
-				console.log(`[Spotlight] SponsorBlock geladen fuer ${item.Name}`);
-			}
-		} else if (CONFIG.enableSponsorBlock) {
-			fetchSponsorBlockSegments(videoId).then(segments => {
-				if (segments.length > 0) {
-					STATE.sponsorBlockSegments[videoId] = segments;
-					console.log(`[Spotlight] SponsorBlock nachgeladen fuer ${item.Name}`);
-				}
-			});
-		}
-	
+    async function createYouTubeBackdrop(item, videoId, apiClient, loadSponsorBlockNow = false) {
+        if (!videoId) {
+            return createImageBackdrop(item, apiClient);
+        }
+        
+        if (CONFIG.enableSponsorBlock && loadSponsorBlockNow) {
+            const segments = await fetchSponsorBlockSegments(videoId);
+            if (segments.length > 0) {
+                STATE.sponsorBlockSegments[videoId] = segments;
+                console.log(`[Spotlight] SponsorBlock geladen fuer ${item.Name}`);
+            }
+        } else if (CONFIG.enableSponsorBlock) {
+            fetchSponsorBlockSegments(videoId).then(segments => {
+                if (segments.length > 0) {
+                    STATE.sponsorBlockSegments[videoId] = segments;
+                    console.log(`[Spotlight] SponsorBlock nachgeladen fuer ${item.Name}`);
+                }
+            });
+        }
+    
         const containerId = `yt-player-${item.Id}`;
         const container = document.createElement("div");
         container.id = containerId;
@@ -1340,28 +1816,28 @@
     }
     
     async function createBannerElement(item, apiClient, loadSponsorBlockNow = false) {
-		const div = document.createElement("div");
-		div.className = "banner-item";
-		
-		const trailerData = getTrailerUrl(item, apiClient);
-		const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-		
-		const shouldPlayVideo = CONFIG.enableVideoBackdrop && 
-							   trailerData && 
-							   trailerData.videoId &&
-							   (!isMobile || CONFIG.enableMobileVideo);
-		
-		let backdropElement;
-		
-		if (shouldPlayVideo) {
-			if (trailerData.isYouTube) {
-				backdropElement = await createYouTubeBackdrop(item, trailerData.videoId, apiClient, loadSponsorBlockNow);
-			} else {
-				backdropElement = createHTML5VideoBackdrop(item, trailerData.url);
-			}
-		} else {
-			backdropElement = createImageBackdrop(item, apiClient);
-		}
+        const div = document.createElement("div");
+        div.className = "banner-item";
+        
+        const trailerData = getTrailerUrl(item, apiClient);
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        
+        const shouldPlayVideo = CONFIG.enableVideoBackdrop && 
+                               trailerData && 
+                               trailerData.videoId &&
+                               (!isMobile || CONFIG.enableMobileVideo);
+        
+        let backdropElement;
+        
+        if (shouldPlayVideo) {
+            if (trailerData.isYouTube) {
+                backdropElement = await createYouTubeBackdrop(item, trailerData.videoId, apiClient, loadSponsorBlockNow);
+            } else {
+                backdropElement = createHTML5VideoBackdrop(item, trailerData.url);
+            }
+        } else {
+            backdropElement = createImageBackdrop(item, apiClient);
+        }
         
         div.appendChild(backdropElement);
         div.dataset.hasVideo = shouldPlayVideo ? 'true' : 'false';
@@ -1409,7 +1885,7 @@
             div.appendChild(overviewContainer);
         }
         
-        const info = createInfoElement(item);
+        const info = await createInfoElement(item);
         if (info) {
             div.appendChild(info);
         }
@@ -1441,12 +1917,12 @@
         const slider = document.createElement("div");
         slider.className = "banner-slider";
         
-		for (let index = 0; index < items.length; index++) {
-			const it = items[index];
-			const isFirstItem = index === 0;
-			const el = await createBannerElement(it, apiClient, isFirstItem);
-			slider.appendChild(el);
-		}
+        for (let index = 0; index < items.length; index++) {
+            const it = items[index];
+            const isFirstItem = index === 0;
+            const el = await createBannerElement(it, apiClient, isFirstItem);
+            slider.appendChild(el);
+        }
         
         if (items.length > 1) {
             const originalFirst = slider.children[0];
@@ -1525,12 +2001,11 @@
             : '<svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>';
         muteButton.setAttribute("aria-label", "Toggle Mute");
         spotlight.appendChild(muteButton);
-
-		const refreshButton = document.createElement("button");
-		refreshButton.className = "refresh-button visible";
-		refreshButton.innerHTML = '<svg viewBox="0 0 24 24"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>';
-		refreshButton.setAttribute("aria-label", "Refresh Items");
-		spotlight.appendChild(refreshButton);
+        const refreshButton = document.createElement("button");
+        refreshButton.className = "refresh-button visible";
+        refreshButton.innerHTML = '<svg viewBox="0 0 24 24"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>';
+        refreshButton.setAttribute("aria-label", "Refresh Items");
+        spotlight.appendChild(refreshButton);
         
         const controls = document.createElement("div");
         controls.className = "controls";
@@ -1559,7 +2034,7 @@
             playButtonOverlay,
             pauseButton,
             muteButton,
-			refreshButton
+            refreshButton
         };
     }
     
@@ -1907,42 +2382,43 @@
         
         return null;
     }
-
-	async function refreshSlideshow(apiClient, oldContainer) {
-		console.log("[Spotlight] Refreshing slideshow...");
-		
-		const refreshButton = document.querySelector('.spotlight .refresh-button');
-		if (refreshButton) {
-			refreshButton.classList.add('refreshing');
-		}
-		
-		pauseAllVideos();
-		
-		Object.keys(STATE.skipIntervals).forEach(itemId => {
-			stopSponsorBlockMonitoring(itemId);
-		});
-		
-		Object.values(STATE.videoPlayers).forEach(player => {
-			if (player.destroy && typeof player.destroy === 'function') {
-				player.destroy();
-			}
-		});
-		STATE.videoPlayers = {};
-		STATE.sponsorBlockSegments = {};
-		STATE.currentSlider = null;
-		
-		if (oldContainer) {
-			oldContainer.remove();
-		}
-		
-		try {
-			sessionStorage.removeItem('spotlight-current-index');
-		} catch (e) {}
-		
-		STATE.isInitializing = false;
-		
-		await init();
-	}
+    
+    async function refreshSlideshow(apiClient, oldContainer) {
+        console.log("[Spotlight] Refreshing slideshow...");
+        
+        const refreshButton = document.querySelector('.spotlight .refresh-button');
+        if (refreshButton) {
+            refreshButton.classList.add('refreshing');
+        }
+        
+        pauseAllVideos();
+        
+        Object.keys(STATE.skipIntervals).forEach(itemId => {
+            stopSponsorBlockMonitoring(itemId);
+        });
+        
+        Object.values(STATE.videoPlayers).forEach(player => {
+            if (player.destroy && typeof player.destroy === 'function') {
+                player.destroy();
+            }
+        });
+        STATE.videoPlayers = {};
+        STATE.sponsorBlockSegments = {};
+        STATE.ratingsCache = {};
+        STATE.currentSlider = null;
+        
+        if (oldContainer) {
+            oldContainer.remove();
+        }
+        
+        try {
+            sessionStorage.removeItem('spotlight-current-index');
+        } catch (e) {}
+        
+        STATE.isInitializing = false;
+        
+        await init();
+    }
     
     function attachSliderBehavior(state, apiClient) {
         const { slider, itemsCount, btnLeft, btnRight, controls, spotlight, pauseButton, muteButton, refreshButton } = state;
@@ -2153,7 +2629,8 @@
                 e.target.closest('.controls') || 
                 e.target.closest('.play-button-overlay') || 
                 e.target.closest('.pause-button') ||
-                e.target.closest('.mute-button')) {
+                e.target.closest('.mute-button') ||
+                e.target.closest('.refresh-button')) {
                 return;
             }
             
@@ -2249,17 +2726,17 @@
                 toggleMute();
             });
         }
-
-		if (refreshButton) {
-			refreshButton.addEventListener('click', async (e) => {
-				e.stopPropagation();
-				e.preventDefault();
-				console.log("[Spotlight] Refresh Button geklickt");
-				
-				const container = document.getElementById(SPOTLIGHT_CONTAINER_ID);
-				await refreshSlideshow(apiClient, container);
-			});
-		}
+        
+        if (refreshButton) {
+            refreshButton.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                console.log("[Spotlight] Refresh Button geklickt");
+                
+                const container = document.getElementById(SPOTLIGHT_CONTAINER_ID);
+                await refreshSlideshow(apiClient, container);
+            });
+        }
         
         let autoplayTimer = null;
         
@@ -2297,23 +2774,24 @@
     }
     
     async function init() {
-		try {
-			if (document.getElementById(SPOTLIGHT_CONTAINER_ID)) {
-				console.warn("[Spotlight] Container bereits vorhanden");
-				return;
-			}
-			
-			if (STATE.isInitializing) {
-				console.warn("[Spotlight] Initialisierung laeuft bereits");
-				return;
-			}
-			
-			STATE.isInitializing = true;
-			
-			insertStyles();
+        try {
+            if (document.getElementById(SPOTLIGHT_CONTAINER_ID)) {
+                console.warn("[Spotlight] Container bereits vorhanden");
+                return;
+            }
+            
+            if (STATE.isInitializing) {
+                console.warn("[Spotlight] Initialisierung laeuft bereits");
+                return;
+            }
+            
+            STATE.isInitializing = true;
+            
+            insertStyles();
             
             const home = findHomeContainer();
             if (!home) {
+                STATE.isInitializing = false;
                 return;
             }
             
@@ -2337,12 +2815,14 @@
             if (!apiClient && window.ApiClient) apiClient = window.ApiClient;
             
             if (!apiClient) {
+                STATE.isInitializing = false;
                 return;
             }
             
             const items = await fetchItems(apiClient);
             if (!items || items.length === 0) {
                 console.warn("[Spotlight] Keine Items erhalten");
+                STATE.isInitializing = false;
                 return;
             }
             
@@ -2368,66 +2848,67 @@
             
             console.log(`[Spotlight] Initialisiert mit ${items.length} Items`);
         } catch (err) {
-			console.error("[Spotlight] Init error", err);
-			STATE.isInitializing = false;
-		} finally {
-			STATE.isInitializing = false;
-		}
+            console.error("[Spotlight] Init error", err);
+            STATE.isInitializing = false;
+        } finally {
+            STATE.isInitializing = false;
+        }
     }
     
-	function observeViewAndInit() {
-		let initialized = false;
-		
-		const observer = new MutationObserver((mutations) => {
-			const homeVisible = !!document.querySelector(".view:not(.hide) .homeSectionsContainer, .view:not(.hide) [data-view='home'], .view:not(.hide) .view-home-home");
-			
-			if (homeVisible && !initialized && !STATE.isInitializing) {
-				initialized = true;
-				setTimeout(() => init(), 300);
-			}
-			
-			if (!homeVisible && initialized) {
-				initialized = false;
-				STATE.isInitializing = false;
-				
-				Object.entries(STATE.videoPlayers).forEach(([itemId, player]) => {
-					stopSponsorBlockMonitoring(itemId);
-					
-					if (player.stopVideo && typeof player.stopVideo === 'function') {
-						player.stopVideo();
-					} else if (player.pauseVideo && typeof player.pauseVideo === 'function') {
-						player.pauseVideo();
-					}
-					
-					if (player.destroy && typeof player.destroy === 'function') {
-						player.destroy();
-					} else if (player.tagName === 'VIDEO') {
-						player.pause();
-						player.src = '';
-						player.load();
-					}
-				});
-				
-				STATE.videoPlayers = {};
-				STATE.sponsorBlockSegments = {};
-				STATE.currentSlider = null;
-				
-				const oldSlider = document.getElementById(SPOTLIGHT_CONTAINER_ID);
-				if (oldSlider) {
-					oldSlider.remove();
-				}
-			}
-		});
-		
-		observer.observe(document.body, { childList: true, subtree: true });
-		
-		setTimeout(() => {
-			if (!initialized && !STATE.isInitializing) {
-				const hv = !!document.querySelector(".view:not(.hide) .homeSectionsContainer, .view:not(.hide) [data-view='home']");
-				if (hv) init();
-			}
-		}, 500);
-	}
+    function observeViewAndInit() {
+        let initialized = false;
+        
+        const observer = new MutationObserver((mutations) => {
+            const homeVisible = !!document.querySelector(".view:not(.hide) .homeSectionsContainer, .view:not(.hide) [data-view='home'], .view:not(.hide) .view-home-home");
+            
+            if (homeVisible && !initialized && !STATE.isInitializing) {
+                initialized = true;
+                setTimeout(() => init(), 300);
+            }
+            
+            if (!homeVisible && initialized) {
+                initialized = false;
+                STATE.isInitializing = false;
+                
+                Object.entries(STATE.videoPlayers).forEach(([itemId, player]) => {
+                    stopSponsorBlockMonitoring(itemId);
+                    
+                    if (player.stopVideo && typeof player.stopVideo === 'function') {
+                        player.stopVideo();
+                    } else if (player.pauseVideo && typeof player.pauseVideo === 'function') {
+                        player.pauseVideo();
+                    }
+                    
+                    if (player.destroy && typeof player.destroy === 'function') {
+                        player.destroy();
+                    } else if (player.tagName === 'VIDEO') {
+                        player.pause();
+                        player.src = '';
+                        player.load();
+                    }
+                });
+                
+                STATE.videoPlayers = {};
+                STATE.sponsorBlockSegments = {};
+                STATE.ratingsCache = {};
+                STATE.currentSlider = null;
+                
+                const oldSlider = document.getElementById(SPOTLIGHT_CONTAINER_ID);
+                if (oldSlider) {
+                    oldSlider.remove();
+                }
+            }
+        });
+        
+        observer.observe(document.body, { childList: true, subtree: true });
+        
+        setTimeout(() => {
+            if (!initialized && !STATE.isInitializing) {
+                const hv = !!document.querySelector(".view:not(.hide) .homeSectionsContainer, .view:not(.hide) [data-view='home']");
+                if (hv) init();
+            }
+        }, 500);
+    }
     
     observeViewAndInit();
 })();
