@@ -28,7 +28,7 @@ Privacy Notice - These API calls may expose:
 - User viewing preferences
 - Proxy Usage
 
-The script uses CORS proxies for certain API calls:
+The script uses CORS proxies for certain API calls or website fetches:
 - https://api.allorigins.win/raw?url=
 - https://api.codetabs.com/v1/proxy?quest=
 - Security Risk: Using third-party proxies can expose request data. 
