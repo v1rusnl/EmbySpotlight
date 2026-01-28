@@ -8,7 +8,7 @@ A Spotlight banner for Emby Media Server
 
 ### First and foremost:
 - This is vibe-coded with the help of Claude Sonnet 4.5 and just a proof of concept
-- Tested with stable Server 4.9.0.30 on a 1080p-Screen
+- Tested with stable Server 4.9.X.X on a 1080p-Screen
 - This Banner just works on the Web Client
 - Big thanks to @Druidblack for the ratings codebase (https://github.com/Druidblack/jellyfin_ratings)
 
@@ -21,25 +21,25 @@ A Spotlight banner for Emby Media Server
  
  3. Change the following values (line 53-69) to your needs:
  
- a) limit: The amount of items from 50 latest the plugin shows in Spotlight in random order
+ - limit: The amount of items from 100 latest the plugin shows in Spotlight in random order
  
  ```
  default = 10 items
  ```
 
- b) autoplayInterval: The amount of time how long an item is presented by Spotlight if it has no Trailer (see enableVideoBackdrop and waitForTrailerToEnd variable)
+ - autoplayInterval: The amount of time how long an item is presented by Spotlight if it has no Trailer (see enableVideoBackdrop and waitForTrailerToEnd variable)
 
  ```
  default = 10000ms (10s)
  ```
 
- c) backgroundColor: The gradient/vignette color at the inside edges of the spotlight; can be any supported value of: 
+ - backgroundColor: The gradient/vignette color at the inside edges of the spotlight; can be any supported value of: 
  
 ```
 HEX: "#0000000" -> Emby Themes: Dark = #1e1e1e; Black = #000000; Light = #ffffff; Finimalism inspired = #0a0515; for other gradient themes like AppleTV or Blue Radiance take e.g. Windows Color Picker (WIN+SHIFT+C) and choose a color on the screen that makes you happy
 ```
  
- d) playbuttonColor: controls the color of the play button when hovering over it and can be any valid value. e.g.:
+ - playbuttonColor: controls the color of the play button when hovering over it and can be any valid value. e.g.:
  
  ```
  HEX: "#0000000"
@@ -50,24 +50,24 @@ HEX: "#0000000" -> Emby Themes: Dark = #1e1e1e; Black = #000000; Light = #ffffff
  Finimalism Inspired: "var(--theme-primary-color)"
  ```
  
- e) enableVideoBackdrop: true|false -> enables/disbales Trailer playback
+ - enableVideoBackdrop: true|false -> enables/disbales Trailer playback
  
- f) startMuted: true|false -> controls if Trailers start muted or not
+ - startMuted: true|false -> controls if Trailers start muted or not
  
- g) videoVolume: Audio Volume of Trailers
+ - videoVolume: Audio Volume of Trailers
  
- h) waitForTrailerToEnd: true|false -> Respect autoplayInterval even an item has a Trailer
+ - waitForTrailerToEnd: true|false -> Respect autoplayInterval even an item has a Trailer
  
- i) enableMobileVideo: true|false -> Enables Trailer playback in mobile views
+ - enableMobileVideo: true|false -> Enables Trailer playback in mobile views
  
- j) preferredVideoQuality: hd720|hd1080|highres -> Video Quality of Trailer playback, hd720 should be sufficient in most cases due to image masking
+ - preferredVideoQuality: hd720|hd1080|highres -> Video Quality of Trailer playback, hd720 should be sufficient in most cases due to image masking
  
- k) enableSponsorBlock: true|false -> Enable SponsorBlock api
+ - enableSponsorBlock: true|false -> Enable SponsorBlock api
  
- 3. Optional: Add IDs of the items you want to present into spotlight-items.txt like this:
+ 3. Optional: Add IDs of the items you want to present into spotlight-items.txt like this (nested IDs like Collection supported):
  <img width="326" height="155" alt="image" src="https://github.com/user-attachments/assets/6f48bf50-7477-4378-af0c-6f4f1f9064ee" />
 
- 4. Paste modified Spotlight.js (and optional spotlight-items.txt) inside /system/dashboard-ui/
+ 4. Paste modified Spotlight.js (and optional spotlight-items.txt) inside /system/dashboard-ui/ (Windows) or your OS equivalent
  
  5. Add ```<script src="Spotlight.js"></script>``` before ```</body>``` tag at the end of /system/dashboard-ui/index.html
 <img width="429" height="81" alt="Screenshot 2025-10-05 155428" src="https://github.com/user-attachments/assets/10f18d01-a610-45b4-bb79-7c895204023d" />

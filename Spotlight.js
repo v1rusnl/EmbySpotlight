@@ -54,12 +54,12 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         imageWidth: 1900,
         limit: 10,
         autoplayInterval: 10000,
-        backgroundColor: "#0a0515",
+        backgroundColor: "#1e1e1e",
         playbuttonColor: "var(--theme-primary-color)",
         customItemsFile: "spotlight-items.txt",
         
         enableVideoBackdrop: true,
-        startMuted: true,
+        startMuted: false,
         videoVolume: 0.4,
         waitForTrailerToEnd: true,
         enableMobileVideo: false,
@@ -1406,10 +1406,10 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
     
     function buildQuery() {
         return {
-            IncludeItemTypes: "Movie",
+            IncludeItemTypes: "Movie,Series", /* "Movie,Series" */
             Recursive: true,
-            Limit: 50,
-            SortBy: "PremiereDate,ProductionYear,CriticRating",
+            Limit: 100,
+            SortBy: "PremiereDate,ProductionYear,CriticRating", /* "PremiereDate,ProductionYear,CriticRating" */
             SortOrder: "Descending",
             EnableImageTypes: "Primary,Backdrop,Thumb,Logo,Banner",
             EnableUserData: false,
@@ -1648,6 +1648,32 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 						}
 					}
 				});
+			}
+		} else {
+			
+			if (item.CriticRating !== null && item.CriticRating !== undefined) {
+				const rtRating = document.createElement("div");
+				rtRating.className = "meta-rating-item banner-meta-item";
+				const isFresh = item.CriticRating >= 60;
+				const tomatoImg = isFresh ? 'fresh.png' : 'rotten.png';
+				
+				rtRating.innerHTML = `
+					<img src="modules/mediainfo/${tomatoImg}" class="meta-rating-icon" alt="Rotten Tomatoes">
+					<span class="meta-rating-score">${item.CriticRating}%</span>
+				`;
+				metaDiv.appendChild(rtRating);
+			}
+			
+			if (item.CommunityRating) {
+				const imdbRating = document.createElement("div");
+				imdbRating.className = "meta-rating-item banner-meta-item";
+				imdbRating.innerHTML = `
+					<svg class="meta-rating-star" viewBox="0 0 24 24">
+						<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+					</svg>
+					<span class="meta-rating-score">${item.CommunityRating.toFixed(1)}</span>
+				`;
+				metaDiv.appendChild(imdbRating);
 			}
 		}
 		
