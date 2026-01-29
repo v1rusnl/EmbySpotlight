@@ -993,7 +993,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             align-items: flex-start;
             gap: 0.5rem;
             pointer-events: none;
-            max-width: 45%;
+            max-width: 65%;
         }
         
         .spotlight .banner-genres {
