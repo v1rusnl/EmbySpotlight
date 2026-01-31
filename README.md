@@ -17,9 +17,9 @@ A Spotlight banner for Emby Media Server
 
  1. Download [Spotlight.js](https://github.com/v1rusnl/EmbySpotlight/blob/main/Spotlight.js) and optionally [spotlight-items.txt](https://github.com/v1rusnl/EmbySpotlight/blob/main/spotlight-items.txt), if you want to decide which items you want to present to users
  
- 2. Set up your MDBLIST_API_KEY and TMDB_API_KEY in line 73-74 -> The keys are needed for the custom ratings
+ 2. Set up your MDBLIST_API_KEY and TMDB_API_KEY in line 71-72 -> The keys are needed for the custom ratings
  
- 3. Change the following values (line 53-69) to your needs:
+ 3. Change the following values (line 53-66) to your needs:
  
  - limit: The amount of items from 100 latest the plugin shows in Spotlight in random order
  
