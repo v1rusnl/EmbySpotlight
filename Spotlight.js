@@ -1,7 +1,7 @@
 /*!
  * Spotlight.js — Emby 4.9 compatible Spotlight slider with Video Backdrop Support & Custom Ratings
  * Enhanced with: YouTube Trailers, HTML5 Video, SponsorBlock, Custom Ratings (IMDb, RT, Metacritic, etc.) - Big thanks to https://github.com/Druidblack/jellyfin_ratings/tree/main
- * Generated: 2026-01-31
+ * Generated: 2026-02-01
  */
 if (typeof GM_xmlhttpRequest === 'undefined') {
     const PROXIES = [
@@ -68,8 +68,8 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         
         // Custom Ratings Config
         enableCustomRatings: true,
-        MDBLIST_API_KEY: 'YOUR_API_KEY',
-        TMDB_API_KEY: 'YOUR_API_KEY'
+        MDBLIST_API_KEY: 'MY_API_KEY',
+        TMDB_API_KEY: 'MY_API_KEY'
     };
     
     const LOGO = {
@@ -1830,16 +1830,39 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 							updatePauseButtonIcon();
 							startSponsorBlockMonitoring(event.target, videoId, item.Id);
 							
-							const currentPlaceholder = container.parentElement?.querySelector('.video-placeholder');
+							let currentPlaceholder = null;
 							
-							if (currentPlaceholder && !currentPlaceholder.classList.contains('hidden')) {
-								console.log(`[Spotlight] Blende Placeholder aus für: ${item.Name}`);
+							if (container.previousElementSibling?.classList.contains('video-placeholder')) {
+								currentPlaceholder = container.previousElementSibling;
+								console.log(`[Spotlight] Placeholder gefunden via previousSibling`);
+							}
+							else if (container.parentElement) {
+								currentPlaceholder = container.parentElement.querySelector('.video-placeholder');
+								if (currentPlaceholder) {
+									console.log(`[Spotlight] Placeholder gefunden via parent query`);
+								}
+							}
+							
+							if (!currentPlaceholder) {
+								console.warn(`[Spotlight] KEIN Placeholder gefunden für ${item.Name}!`);
+								console.log(`[Spotlight] container.parentElement:`, container.parentElement);
+								console.log(`[Spotlight] container.previousElementSibling:`, container.previousElementSibling);
+								container.classList.add('video-ready');
+								return;
+							}
+							
+							if (!currentPlaceholder.classList.contains('hidden')) {
+								console.log(`[Spotlight] Blende Placeholder aus (sichtbar) für: ${item.Name}`);
 								setTimeout(() => {
 									container.classList.add('video-ready');
 									setTimeout(() => {
 										currentPlaceholder.classList.add('hidden');
+										console.log(`[Spotlight] Placeholder ausgeblendet für: ${item.Name}`);
 									}, 300);
 								}, 500);
+							} else {
+								console.log(`[Spotlight] Placeholder bereits versteckt für: ${item.Name}`);
+								container.classList.add('video-ready');
 							}
 						} else if (playerState === YT.PlayerState.PAUSED) {
 							console.log(`[Spotlight] Video pausiert`);
@@ -2451,16 +2474,39 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 							updatePauseButtonIcon();
 							startSponsorBlockMonitoring(event.target, videoId, itemId);
 							
-							const currentPlaceholder = container.parentElement?.querySelector('.video-placeholder');
+							let currentPlaceholder = null;
 							
-							if (currentPlaceholder && !currentPlaceholder.classList.contains('hidden')) {
-								console.log(`[Spotlight] Blende Placeholder aus für: ${itemId}`);
+							if (container.previousElementSibling?.classList.contains('video-placeholder')) {
+								currentPlaceholder = container.previousElementSibling;
+								console.log(`[Spotlight] Placeholder gefunden via previousSibling für ${itemId}`);
+							}
+							else if (container.parentElement) {
+								currentPlaceholder = container.parentElement.querySelector('.video-placeholder');
+								if (currentPlaceholder) {
+									console.log(`[Spotlight] Placeholder gefunden via parent query für ${itemId}`);
+								}
+							}
+							
+							if (!currentPlaceholder) {
+								console.warn(`[Spotlight] KEIN Placeholder gefunden für ${itemId}!`);
+								console.log(`[Spotlight] container.parentElement:`, container.parentElement);
+								console.log(`[Spotlight] container.previousElementSibling:`, container.previousElementSibling);
+								container.classList.add('video-ready');
+								return;
+							}
+							
+							if (!currentPlaceholder.classList.contains('hidden')) {
+								console.log(`[Spotlight] Blende Placeholder aus (sichtbar) für: ${itemId}`);
 								setTimeout(() => {
 									container.classList.add('video-ready');
 									setTimeout(() => {
 										currentPlaceholder.classList.add('hidden');
+										console.log(`[Spotlight] Placeholder ausgeblendet für: ${itemId}`);
 									}, 300);
 								}, 500);
+							} else {
+								console.log(`[Spotlight] Placeholder bereits versteckt für: ${itemId}`);
+								container.classList.add('video-ready');
 							}
 						} 
 						else if (playerState === YT.PlayerState.BUFFERING) {
@@ -2470,7 +2516,10 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 							console.log(`[Spotlight] Video beendet: ${itemId}`);
 							stopSponsorBlockMonitoring(itemId);
 							
-							const currentPlaceholder = container.parentElement?.querySelector('.video-placeholder');
+							let currentPlaceholder = container.previousElementSibling?.classList.contains('video-placeholder') 
+								? container.previousElementSibling 
+								: container.parentElement?.querySelector('.video-placeholder');
+								
 							if (currentPlaceholder) {
 								currentPlaceholder.classList.remove('hidden');
 							}
