@@ -1,7 +1,7 @@
 /*!
  * Spotlight.js — Emby 4.9 compatible Spotlight slider with Video Backdrop Support & Custom Ratings
  * Enhanced with: YouTube Trailers, HTML5 Video, SponsorBlock, Custom Ratings (IMDb, RT, Metacritic, etc.) - Big thanks to https://github.com/Druidblack/jellyfin_ratings/tree/main
- * Generated: 2026-02-01
+ * Generated: 2026-02-02
  */
 if (typeof GM_xmlhttpRequest === 'undefined') {
     const PROXIES = [
@@ -216,7 +216,18 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                     
                     const ratings = [];
                     
+                    let metacriticScore = null;
+                    let metacriticVotes = null;
+                    
                     if (Array.isArray(data.ratings)) {
+                        data.ratings.forEach(r => {
+                            const key = r.source.toLowerCase();
+                            if (key === 'metacritic') {
+                                metacriticScore = r.value;
+                                metacriticVotes = r.votes;
+                            }
+                        });
+                        
                         data.ratings.forEach(r => {
                             if (r.value == null) return;
                             
@@ -224,8 +235,10 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                             
                             if (key === 'tomatoes') key = r.value < 60 ? 'tomatoes_rotten' : 'tomatoes';
                             else if (key.includes('popcorn')) key = r.value < 60 ? 'audience_rotten' : 'audience';
-                            else if (key.includes('metacritic') && !key.includes('user')) {
-                                key = (r.value >= 81) ? 'metacriticms' : 'metacritic';
+                            else if (key === 'metacritic') {
+                                // Must-See: Score > 81 AND Votes > 14
+                                const isMustSee = metacriticScore > 81 && metacriticVotes > 14;
+                                key = isMustSee ? 'metacriticms' : 'metacritic';
                             }
                             else if (key.includes('metacritic') && key.includes('user')) key = 'metacriticus';
                             else if (key.includes('trakt')) key = 'trakt';
@@ -238,6 +251,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                             ratings.push({
                                 source: r.source,
                                 value: r.value,
+                                votes: r.votes,
                                 key: key,
                                 logo: logoUrl
                             });
@@ -1636,7 +1650,8 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                         img.src = rating.logo;
                         img.alt = rating.source;
                         img.className = "custom-rating-logo";
-                        img.title = `${rating.source}: ${rating.value}`;
+                        img.title = `${rating.source}: ${rating.value}${rating.votes ? ` (${rating.votes} votes)` : ''}`;
+                        img.dataset.source = rating.key;
                         
                         const value = document.createElement("span");
                         value.className = "custom-rating-value";
@@ -1650,7 +1665,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                     if (imdbId) {
                         const isCertified = await fetchRTCertified(imdbId);
                         if (isCertified) {
-                            const tomatoImg = metaDiv.querySelector('img[alt*="Tomatoes"]:not([alt*="Popcorn"])');
+                            const tomatoImg = metaDiv.querySelector('img[data-source="tomatoes"]');
                             if (tomatoImg && !tomatoImg.src.includes('certified')) {
                                 tomatoImg.src = LOGO.tomatoes_certified;
                             }
@@ -1658,7 +1673,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                         
                         const isAudienceCertified = await fetchRTAudienceCertified(imdbId);
                         if (isAudienceCertified) {
-                            const audienceImg = metaDiv.querySelector('img[alt*="Popcorn"]');
+                            const audienceImg = metaDiv.querySelector('img[data-source="audience"]');
                             if (audienceImg) {
                                 audienceImg.src = LOGO.rotten_ver;
                             }
@@ -1830,39 +1845,41 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 							updatePauseButtonIcon();
 							startSponsorBlockMonitoring(event.target, videoId, item.Id);
 							
-							let currentPlaceholder = null;
+							const ytContainer = document.getElementById(containerId);
+							console.log(`[Spotlight] YouTube Container neu gefunden:`, ytContainer);
 							
-							if (container.previousElementSibling?.classList.contains('video-placeholder')) {
-								currentPlaceholder = container.previousElementSibling;
-								console.log(`[Spotlight] Placeholder gefunden via previousSibling`);
+							if (!ytContainer) {
+								console.error(`[Spotlight] Container ${containerId} nicht im DOM gefunden!`);
+								return;
 							}
-							else if (container.parentElement) {
-								currentPlaceholder = container.parentElement.querySelector('.video-placeholder');
-								if (currentPlaceholder) {
-									console.log(`[Spotlight] Placeholder gefunden via parent query`);
-								}
+							
+							const wrapper = ytContainer.closest('.video-backdrop-wrapper');
+							console.log(`[Spotlight] Wrapper gefunden:`, wrapper);
+							
+							let currentPlaceholder = null;
+							if (wrapper) {
+								currentPlaceholder = wrapper.querySelector('.video-placeholder');
+								console.log(`[Spotlight] Placeholder in wrapper gefunden:`, currentPlaceholder);
 							}
 							
 							if (!currentPlaceholder) {
 								console.warn(`[Spotlight] KEIN Placeholder gefunden für ${item.Name}!`);
-								console.log(`[Spotlight] container.parentElement:`, container.parentElement);
-								console.log(`[Spotlight] container.previousElementSibling:`, container.previousElementSibling);
-								container.classList.add('video-ready');
+								ytContainer.classList.add('video-ready');
 								return;
 							}
 							
 							if (!currentPlaceholder.classList.contains('hidden')) {
-								console.log(`[Spotlight] Blende Placeholder aus (sichtbar) für: ${item.Name}`);
+								console.log(`[Spotlight] Blende Placeholder aus für: ${item.Name}`);
 								setTimeout(() => {
-									container.classList.add('video-ready');
+									ytContainer.classList.add('video-ready');
 									setTimeout(() => {
 										currentPlaceholder.classList.add('hidden');
-										console.log(`[Spotlight] Placeholder ausgeblendet für: ${item.Name}`);
+										console.log(`[Spotlight] Placeholder ausgeblendet!`);
 									}, 300);
 								}, 500);
 							} else {
-								console.log(`[Spotlight] Placeholder bereits versteckt für: ${item.Name}`);
-								container.classList.add('video-ready');
+								console.log(`[Spotlight] Placeholder bereits versteckt`);
+								ytContainer.classList.add('video-ready');
 							}
 						} else if (playerState === YT.PlayerState.PAUSED) {
 							console.log(`[Spotlight] Video pausiert`);
@@ -2474,39 +2491,41 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 							updatePauseButtonIcon();
 							startSponsorBlockMonitoring(event.target, videoId, itemId);
 							
-							let currentPlaceholder = null;
+							const ytContainer = document.getElementById(playerId);
+							console.log(`[Spotlight] YouTube Container neu gefunden:`, ytContainer);
 							
-							if (container.previousElementSibling?.classList.contains('video-placeholder')) {
-								currentPlaceholder = container.previousElementSibling;
-								console.log(`[Spotlight] Placeholder gefunden via previousSibling für ${itemId}`);
+							if (!ytContainer) {
+								console.error(`[Spotlight] Container ${playerId} nicht im DOM gefunden!`);
+								return;
 							}
-							else if (container.parentElement) {
-								currentPlaceholder = container.parentElement.querySelector('.video-placeholder');
-								if (currentPlaceholder) {
-									console.log(`[Spotlight] Placeholder gefunden via parent query für ${itemId}`);
-								}
+							
+							const wrapper = ytContainer.closest('.video-backdrop-wrapper');
+							console.log(`[Spotlight] Wrapper gefunden:`, wrapper);
+							
+							let currentPlaceholder = null;
+							if (wrapper) {
+								currentPlaceholder = wrapper.querySelector('.video-placeholder');
+								console.log(`[Spotlight] Placeholder in wrapper gefunden:`, currentPlaceholder);
 							}
 							
 							if (!currentPlaceholder) {
 								console.warn(`[Spotlight] KEIN Placeholder gefunden für ${itemId}!`);
-								console.log(`[Spotlight] container.parentElement:`, container.parentElement);
-								console.log(`[Spotlight] container.previousElementSibling:`, container.previousElementSibling);
-								container.classList.add('video-ready');
+								ytContainer.classList.add('video-ready');
 								return;
 							}
 							
 							if (!currentPlaceholder.classList.contains('hidden')) {
-								console.log(`[Spotlight] Blende Placeholder aus (sichtbar) für: ${itemId}`);
+								console.log(`[Spotlight] Blende Placeholder aus für: ${itemId}`);
 								setTimeout(() => {
-									container.classList.add('video-ready');
+									ytContainer.classList.add('video-ready');
 									setTimeout(() => {
 										currentPlaceholder.classList.add('hidden');
-										console.log(`[Spotlight] Placeholder ausgeblendet für: ${itemId}`);
+										console.log(`[Spotlight] Placeholder ausgeblendet!`);
 									}, 300);
 								}, 500);
 							} else {
-								console.log(`[Spotlight] Placeholder bereits versteckt für: ${itemId}`);
-								container.classList.add('video-ready');
+								console.log(`[Spotlight] Placeholder bereits versteckt`);
+								ytContainer.classList.add('video-ready');
 							}
 						} 
 						else if (playerState === YT.PlayerState.BUFFERING) {
@@ -2516,14 +2535,16 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 							console.log(`[Spotlight] Video beendet: ${itemId}`);
 							stopSponsorBlockMonitoring(itemId);
 							
-							let currentPlaceholder = container.previousElementSibling?.classList.contains('video-placeholder') 
-								? container.previousElementSibling 
-								: container.parentElement?.querySelector('.video-placeholder');
-								
+							const ytContainer = document.getElementById(playerId);
+							const wrapper = ytContainer?.closest('.video-backdrop-wrapper');
+							const currentPlaceholder = wrapper?.querySelector('.video-placeholder');
+							
 							if (currentPlaceholder) {
 								currentPlaceholder.classList.remove('hidden');
 							}
-							container.classList.remove('video-ready');
+							if (ytContainer) {
+								ytContainer.classList.remove('video-ready');
+							}
 							
 							if (CONFIG.waitForTrailerToEnd) {
 								setTimeout(() => {
