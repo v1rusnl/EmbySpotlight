@@ -9,8 +9,8 @@ currently being supported with security updates.
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.0.8   | :white_check_mark: |
-| < 0.0.8 | :x:                |
+| latest  | :white_check_mark: |
+| < latest | :x:                |
 
 
 ## External API Calls
