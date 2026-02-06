@@ -1,7 +1,7 @@
 /*!
  * Spotlight.js — Emby 4.9 compatible Spotlight slider with Video Backdrop Support & Custom Ratings
  * Enhanced with: YouTube Trailers, HTML5 Video, SponsorBlock, Custom Ratings (IMDb, RT, Metacritic, etc.) - Big thanks to https://github.com/Druidblack/jellyfin_ratings/tree/main
- * Generated: 2026-02-02
+ * Generated: 2026-02-06
  */
 if (typeof GM_xmlhttpRequest === 'undefined') {
     const PROXIES = [
@@ -52,7 +52,10 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         imageWidth: 1900,
         limit: 10,
         autoplayInterval: 10000,
-        backgroundColor: "#1e1e1e",
+		vignetteColorTop:    "#1e1e1e",
+		vignetteColorBottom: "#1e1e1e",
+		vignetteColorLeft:   "#1e1e1e",
+		vignetteColorRight:  "#1e1e1e",
         playbuttonColor: "var(--theme-primary-color)",
         customItemsFile: "spotlight-items.txt",
         
@@ -68,13 +71,13 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         
         // Custom Ratings Config
         enableCustomRatings: true,
-        MDBLIST_API_KEY: 'MY_API_KEY',
-        TMDB_API_KEY: 'MY_API_KEY'
+        MDBLIST_API_KEY: 'YOUR_API_KEY',
+        TMDB_API_KEY: 'YOUR_API_KEY'
     };
     
     const LOGO = {
-        imdb: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/IMDbsq.png',
-        tmdb: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/TMDBsq.png',
+        imdb: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/IMDb.png',
+        tmdb: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/TMDB.png',
         tomatoes: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/Rotten_Tomatoes.png',
         tomatoes_rotten: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/Rotten_Tomatoes_rotten.png',
         tomatoes_certified: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/rotten-tomatoes-certified.png',
@@ -143,15 +146,34 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             }
         });
     }
-    
-    function hexToRgb(hex) {
-        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-        return result ? {
-            r: parseInt(result[1], 16),
-            g: parseInt(result[2], 16),
-            b: parseInt(result[3], 16)
-        } : { r: 0, g: 0, b: 0 };
-    }
+	
+	function parseColor(color) {
+		if (!color) return { r: 0, g: 0, b: 0, a: 1 };
+		
+		color = color.trim();
+		
+		const hexMatch = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})?$/i.exec(color);
+		if (hexMatch) {
+			return {
+				r: parseInt(hexMatch[1], 16),
+				g: parseInt(hexMatch[2], 16),
+				b: parseInt(hexMatch[3], 16),
+				a: hexMatch[4] ? parseInt(hexMatch[4], 16) / 255 : 1
+			};
+		}
+		
+		const rgbaMatch = color.match(/rgba?\(\s*([\d.]+)\s*[,/]\s*([\d.]+)\s*[,/]\s*([\d.]+)\s*(?:[,/]\s*([\d.]+))?\s*\)/);
+		if (rgbaMatch) {
+			return {
+				r: parseInt(rgbaMatch[1]),
+				g: parseInt(rgbaMatch[2]),
+				b: parseInt(rgbaMatch[3]),
+				a: rgbaMatch[4] !== undefined ? parseFloat(rgbaMatch[4]) : 1
+			};
+		}
+		
+		return { r: 0, g: 0, b: 0, a: 1 };
+	}
     
     function shuffleArray(array) {
         const shuffled = [...array];
@@ -216,10 +238,12 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                     
                     const ratings = [];
                     
+                    // Extract Metacritic data for Must-See check
                     let metacriticScore = null;
                     let metacriticVotes = null;
                     
                     if (Array.isArray(data.ratings)) {
+                        // First pass: find Metacritic data
                         data.ratings.forEach(r => {
                             const key = r.source.toLowerCase();
                             if (key === 'metacritic') {
@@ -228,6 +252,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                             }
                         });
                         
+                        // Second pass: process all ratings
                         data.ratings.forEach(r => {
                             if (r.value == null) return;
                             
@@ -692,9 +717,29 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         
         const bgColor = CONFIG.backgroundColor;
         const playbuttonColor = CONFIG.playbuttonColor;
-        const rgb = hexToRgb(bgColor);
-        const rgbaColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 1)`;
-        
+		const top = parseColor(CONFIG.vignetteColorTop);
+		const bottom = parseColor(CONFIG.vignetteColorBottom);
+		const left = parseColor(CONFIG.vignetteColorLeft);
+		const right = parseColor(CONFIG.vignetteColorRight);
+
+		function gradientSteps(c) {
+			const r = c.r, g = c.g, b = c.b;
+			return `
+				rgba(${r}, ${g}, ${b}, 1)    0%, 
+				rgba(${r}, ${g}, ${b}, 1)    2%,
+				rgba(${r}, ${g}, ${b}, 1)    4%,
+				rgba(${r}, ${g}, ${b}, 0.99) 6%,
+				rgba(${r}, ${g}, ${b}, 0.97) 8%,
+				rgba(${r}, ${g}, ${b}, 0.95) 10%,
+				rgba(${r}, ${g}, ${b}, 0.9)  15%,
+				rgba(${r}, ${g}, ${b}, 0.85) 20%,
+				rgba(${r}, ${g}, ${b}, 0.75) 30%,
+				rgba(${r}, ${g}, ${b}, 0.6)  40%,
+				rgba(${r}, ${g}, ${b}, 0.4)  50%,
+				rgba(${r}, ${g}, ${b}, 0.2)  70%,
+				transparent                  100%`;
+		}
+	
         const css = `
         .spotlight-container { 
             width: 100%;
@@ -862,20 +907,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             width: 50%;
             pointer-events: none;
             z-index: 6;
-            background: linear-gradient(to right, 
-                 ${rgbaColor} 0%, 
-                ${rgbaColor} 2%,
-                ${rgbaColor} 4%,
-                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.99) 6%,
-                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.97) 8%,
-                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.95) 10%,
-                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.9) 15%,
-                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.85) 20%,
-                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.75) 30%,
-                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.6) 40%,
-                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.4) 50%,
-                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.2) 70%,
-                transparent 100%);
+            background: linear-gradient(to right, ${gradientSteps(left)});
         }
         
         .spotlight .banner-gradient-right {
@@ -886,20 +918,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             width: 40%;
             pointer-events: none;
             z-index: 6;
-            background: linear-gradient(to left, 
-                ${rgbaColor} 0%, 
-                ${rgbaColor} 2%,
-                ${rgbaColor} 4%,
-                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.99) 6%,
-                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.97) 8%,
-                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.95) 10%,
-                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.9) 15%,
-                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.85) 20%,
-                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.75) 30%,
-                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.6) 40%,
-                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.4) 50%,
-                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.2) 70%,
-                transparent 100%);
+            background: linear-gradient(to left, ${gradientSteps(right)});
         }
         
         .spotlight .banner-vignette-top {
@@ -908,45 +927,20 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             left: 0;
             right: 0;
             height: 50%;
-            background: linear-gradient(to bottom, 
-                ${rgbaColor} 0%, 
-                ${rgbaColor} 2%,
-                ${rgbaColor} 4%,
-                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.99) 6%,
-                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.97) 8%,
-                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.95) 10%,
-                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.9) 15%,
-                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.85) 20%,
-                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.75) 30%,
-                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.6) 40%,
-                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.4) 50%,
-                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.2) 70%,
-                transparent 100%);
             pointer-events: none;
             z-index: 6;
+			background: linear-gradient(to bottom, ${gradientSteps(top)});
         }
+		
         .spotlight .banner-vignette-bottom {
             position: absolute;
             bottom: 0;
             left: 0;
             right: 0;
             height: 50%;
-            background: linear-gradient(to top, 
-                ${rgbaColor} 0%, 
-                ${rgbaColor} 2%,
-                ${rgbaColor} 4%,
-                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.99) 6%,
-                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.97) 8%,
-                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.95) 10%,
-                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.9) 15%,
-                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.85) 20%,
-                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.75) 30%,
-                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.6) 40%,
-                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.4) 50%,
-                rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.2) 70%,
-                transparent 100%);
             pointer-events: none;
             z-index: 6;
+			background: linear-gradient(to top, ${gradientSteps(bottom)});
         }
         
         .spotlight .banner-logo {
@@ -1044,7 +1038,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             align-items: flex-start;
             gap: 0.5rem;
             pointer-events: none;
-            max-width: 45%;
+            max-width: 60%;
         }
         
         .spotlight .banner-genres {

@@ -17,9 +17,9 @@ A Spotlight banner for Emby Media Server
 
  1. Download [Spotlight.js](https://github.com/v1rusnl/EmbySpotlight/blob/main/Spotlight.js) and optionally [spotlight-items.txt](https://github.com/v1rusnl/EmbySpotlight/blob/main/spotlight-items.txt), if you want to decide which items you want to present to users
  
- 2. Set up your MDBLIST_API_KEY and TMDB_API_KEY in line 71-72 -> The keys are needed for the custom ratings
+ 2. Set up your MDBLIST_API_KEY and TMDB_API_KEY in line 74-75 -> The keys are needed for the custom ratings
  
- 3. Change the following values (line 53-66) to your needs:
+ 3. Change the following values (line 53-69) to your needs:
  
  - limit: The amount of items from 100 latest the plugin shows in Spotlight in random order
  
@@ -33,7 +33,7 @@ A Spotlight banner for Emby Media Server
  default = 10000ms (10s)
  ```
 
- - backgroundColor: The gradient/vignette color at the inside edges of the spotlight; can be any supported value of: 
+ - vignetteColorTop/Bottom/Left/Right: The gradient/vignette color at the inside edges of the spotlight; can be any supported value of: 
  
 ```
 HEX: "#0000000" -> Emby Themes: Dark = #1e1e1e; Black = #000000; Light = #ffffff; Finimalism inspired = #0a0515; for other gradient themes like AppleTV or Blue Radiance take e.g. Windows Color Picker (WIN+SHIFT+C) and choose a color on the screen that makes you happy
