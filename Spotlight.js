@@ -3,7 +3,7 @@
  * Enhanced with: YouTube Trailers, HTML5 Video, SponsorBlock, Custom Ratings (IMDb, RT, Metacritic, etc.) - Big thanks to https://github.com/Druidblack/jellyfin_ratings/tree/main
  * Generated: 2026-02-07
  */
- 
+
 if (typeof GM_xmlhttpRequest === 'undefined') {
   window.GM_xmlhttpRequest = function({ method = 'GET', url, headers = {}, data, onload, onerror }) {
     fetch(url, {
@@ -50,7 +50,8 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         // Custom Ratings Config
         enableCustomRatings: true,
         MDBLIST_API_KEY: 'YOUR_API_KEY',
-        TMDB_API_KEY: 'YOUR_API_KEY'
+        TMDB_API_KEY: 'YOUR_API_KEY',
+		KINOPOISK_API_KEY: 'YOUR_API_KEY'
     };
     
     const LOGO = {
@@ -68,7 +69,9 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         trakt: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/Trakt.png',
         letterboxd: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/letterboxd.png',
         myanimelist: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/mal.png',
-        anilist: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/anilist.png'
+        anilist: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/anilist.png',
+		kinopoisk: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/kinopoisk.png',
+		rogerebert: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/Roger_Ebert.png'
     };
 	
 	// ══════════════════════════════════════════════════════════════════
@@ -327,6 +330,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                             else if (key.includes('metacritic') && key.includes('user')) key = 'metacriticus';
                             else if (key.includes('trakt')) key = 'trakt';
                             else if (key.includes('letterboxd')) key = 'letterboxd';
+							else if (key.includes('roger') || key.includes('ebert')) key = 'rogerebert';
                             else if (key.includes('myanimelist')) key = 'myanimelist';
                             
                             const logoUrl = LOGO[key];
@@ -496,6 +500,54 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             return await queryAniListBySearch(originalTitle, parseInt(year, 10));
         }
         return null;
+    }
+
+    function fetchKinopoiskRating(title, year, type) {
+        return new Promise((resolve) => {
+            if (!CONFIG.KINOPOISK_API_KEY || CONFIG.KINOPOISK_API_KEY === 'DEIN_KEY_HIER') {
+                resolve(null);
+                return;
+            }
+            
+            const url = `https://kinopoiskapiunofficial.tech/api/v2.2/films?keyword=${encodeURIComponent(title)}&yearFrom=${year}&yearTo=${year}`;
+            
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url,
+                headers: {
+                    'X-API-KEY': CONFIG.KINOPOISK_API_KEY,
+                    'Content-Type': 'application/json'
+                },
+                onload(res) {
+                    if (res.status !== 200) {
+                        resolve(null);
+                        return;
+                    }
+                    let data;
+                    try { data = JSON.parse(res.responseText); }
+                    catch (e) {
+                        resolve(null);
+                        return;
+                    }
+                    
+                    const list = data.items || data.films || [];
+                    if (!list.length) {
+                        resolve(null);
+                        return;
+                    }
+                    
+                    const desired = type === 'show' ? 'TV_SERIES' : 'FILM';
+                    const item = list.find(i => i.type === desired) || list[0];
+                    
+                    if (item.ratingKinopoisk != null) {
+                        resolve({ score: item.ratingKinopoisk });
+                    } else {
+                        resolve(null);
+                    }
+                },
+                onerror: () => resolve(null)
+            });
+        });
     }
     
     async function fetchSponsorBlockSegments(videoId) {
@@ -1614,6 +1666,33 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                             const value = document.createElement("span");
                             value.className = "custom-rating-value";
                             value.textContent = anilistRating.score;
+                            
+                            ratingItem.appendChild(img);
+                            ratingItem.appendChild(value);
+                            metaDiv.appendChild(ratingItem);
+                        }
+                    }
+
+                    // Kinopoisk lookup
+                    if (ratingsData.originalTitle && ratingsData.year) {
+                        const kpRating = await fetchKinopoiskRating(
+                            ratingsData.originalTitle,
+                            parseInt(ratingsData.year, 10),
+                            type
+                        );
+                        if (kpRating && kpRating.score) {
+                            const ratingItem = document.createElement("div");
+                            ratingItem.className = "custom-rating-item";
+                            
+                            const img = document.createElement("img");
+                            img.src = LOGO.kinopoisk;
+                            img.alt = "Kinopoisk";
+                            img.className = "custom-rating-logo";
+                            img.title = `Kinopoisk: ${kpRating.score}`;
+                            
+                            const value = document.createElement("span");
+                            value.className = "custom-rating-value";
+                            value.textContent = kpRating.score;
                             
                             ratingItem.appendChild(img);
                             ratingItem.appendChild(value);

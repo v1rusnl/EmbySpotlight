@@ -17,9 +17,9 @@ A Spotlight banner for Emby Media Server
 
  1. Download [Spotlight.js](https://github.com/v1rusnl/EmbySpotlight/blob/main/Spotlight.js) and optionally [spotlight-items.txt](https://github.com/v1rusnl/EmbySpotlight/blob/main/spotlight-items.txt), if you want to decide which items you want to present to users
  
- 2. Set up your MDBLIST_API_KEY and TMDB_API_KEY in line 74-75 -> The keys are needed for the custom ratings
+ 2. Set up your MDBLIST_API_KEY, TMDB_API_KEY and  in line 52-54 -> The keys are needed for the custom ratings, min. one key is mandatory
  
- 3. Change the following values (line 53-69) to your needs:
+ 3. Change the following values (line 31-47) to your needs:
  
  - limit: The amount of items from 100 latest the plugin shows in Spotlight in random order
  
@@ -64,7 +64,7 @@ HEX: "#0000000" -> Emby Themes: Dark = #1e1e1e; Black = #000000; Light = #ffffff
  
  - enableSponsorBlock: true|false -> Enable SponsorBlock api; NOTE: You need to have installed the Sponsorblock browser extension
  
- - Manual Overrides for RT Cerified Fresh and Verified Hot status can be set in line 101 ff
+ - Manual Overrides for RT Cerified Fresh and Verified Hot status can be set in line 82 ff
  
  3. Optional: Add IDs of the items you want to present into spotlight-items.txt like this (nested IDs like Collection supported):
  <img width="326" height="155" alt="image" src="https://github.com/user-attachments/assets/6f48bf50-7477-4378-af0c-6f4f1f9064ee" />
