@@ -3,48 +3,26 @@
  * Enhanced with: YouTube Trailers, HTML5 Video, SponsorBlock, Custom Ratings (IMDb, RT, Metacritic, etc.) - Big thanks to https://github.com/Druidblack/jellyfin_ratings/tree/main
  * Generated: 2026-02-07
  */
+ 
 if (typeof GM_xmlhttpRequest === 'undefined') {
-    const PROXIES = [
-        'https://api.allorigins.win/raw?url=',
-        'https://api.codetabs.com/v1/proxy?quest='
-    ];
-    const DIRECT_DOMAINS = [
-        'api.mdblist.com',
-        'graphql.anilist.co',
-        'query.wikidata.org',
-        'www.google.com',
-        'api.themoviedb.org'
-    ];
-    
-    window.GM_xmlhttpRequest = function({ method = 'GET', url, headers = {}, data, onload, onerror }) {
-        const isDirect = DIRECT_DOMAINS.some(d => url.includes(d));
-        let fetchUrl;
-        
-        if (isDirect) {
-            fetchUrl = url;
-        } else {
-            const proxy = PROXIES[Math.floor(Math.random() * PROXIES.length)];
-            const sep = url.includes('?') ? '&' : '?';
-            const bump = `_=${Date.now()}`;
-            fetchUrl = proxy + encodeURIComponent(url + sep + bump);
-        }
-        
-        fetch(fetchUrl, {
-            method,
-            headers,
-            body: data,
-            cache: 'no-store'
-        })
-        .then(response =>
-            response.text().then(text =>
-                onload({ status: response.status, responseText: text })
-            )
-        )
-        .catch(err => {
-            if (typeof onerror === 'function') onerror(err);
-        });
-    };
+  window.GM_xmlhttpRequest = function({ method = 'GET', url, headers = {}, data, onload, onerror }) {
+    fetch(url, {
+      method,
+      headers,
+      body: data,
+      cache: 'no-store'
+    })
+    .then(response =>
+      response.text().then(text =>
+        onload({ status: response.status, responseText: text })
+      )
+    )
+    .catch(err => {
+      if (typeof onerror === 'function') onerror(err);
+    });
+  };
 }
+
 (function () {
     'use strict';
     
