@@ -105,10 +105,35 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
     ];
     
     const VERIFIED_HOT_OVERRIDES = [
-	    '1054867',      // One Battle after another
-        // '550',      // Fight Club
-        // '299536',   // Avengers: Infinity War
-        // '438631',   // Dune
+// Movies with a score <90, but RT verified hot nonetheless
+'812583', // Wake Up Dead Man A Knives Out Mystery
+'1272837', // 28 Years Later: The Bone Temple
+'1054867', // One Battle After Another
+'1088166', // Relay
+'1007734', // Nobody 2
+'1078605', // Weapons
+'1100988', // 28 Years Later
+'1022787', // Elio
+'575265', // Mission: Impossible - The Final Reckoning
+'574475', // Final Destination Bloodlines
+'1197306', // A Working Man
+'784524', // Magazine Dreams
+'1084199', // Companion
+'1280672', // One of Them Days
+'1082195', // The Order
+'845781', // Red One
+'1064213', // Anora
+'1034541', // Terrifier 3
+'1112426', // Stree 2
+'1079091', // It Ends with Us
+'956842', // Fly Me to the Moon
+'823464', // Godzilla x Kong: The New Empire
+'768362', // Missing
+'614939', // Bros
+'335787', // Uncharted
+'576845', // Last Night in Soho
+'568124', // Encanto
+'340558', // Fantasmas
     ];
     // ══════════════════════════════════════════════════════════════════
     
