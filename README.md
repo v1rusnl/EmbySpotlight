@@ -25,7 +25,7 @@ A Spotlight banner for Emby Media Server
  Object.keys(localStorage)
  .filter(k => k.startsWith('emby_ratings_'))
  .forEach(k => localStorage.removeItem(k));
- console.log('Ratings-Cache gelöscht');
+ console.log('Erased Ratings-Cache');
  ```
  
  3. Change the following values (line 38-54) to your needs:
