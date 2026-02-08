@@ -28,15 +28,14 @@ Privacy Notice - These API calls may expose:
 - User viewing preferences
 - Proxy Usage
 
-The script uses CORS proxies for certain API calls or website fetches:
-- https://api.allorigins.win/raw?url=
-- https://api.codetabs.com/v1/proxy?quest=
+The script can use CORS proxies for website fetches:
+- No default CORS is set up in this script, the user must paste it inside the code (see Readme)
 - Security Risk: Using third-party proxies can expose request data. 
 
 Consider:
-- Self-hosting a CORS proxy
+- Self-hosting a CORS proxy since the public ones are heavily rate-limited or with an API Key
 - Removing proxy usage if possible
-- Reviewing the PROXIES and DIRECT_DOMAINS configuration
+- Reviewing the PROXIES and DIRECT_DOMAINS configuration inside the Rating provider functions
 
 ## Best Practices
 
