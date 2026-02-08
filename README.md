@@ -17,9 +17,18 @@ A Spotlight banner for Emby Media Server
 
  1. Download [Spotlight.js](https://github.com/v1rusnl/EmbySpotlight/blob/main/Spotlight.js) and optionally [spotlight-items.txt](https://github.com/v1rusnl/EmbySpotlight/blob/main/spotlight-items.txt), if you want to decide which items you want to present to users
  
- 2. Set up your MDBLIST_API_KEY, TMDB_API_KEY and  in line 52-54 -> The keys are needed for the custom ratings, min. one key is mandatory
+ 2. Set up your MDBLIST_API_KEY, TMDB_API_KEY and KINOPOISK_API_KEY in line 59-61 -> The keys are needed for the custom ratings, min. one key is mandatory
  
- 3. Change the following values (line 31-47) to your needs:
+ 3. Set your desired cache duration to store Ratings in Browser in line 62 (to minimize API calls). Cou can manually delete ratings cache in Browsers DevConsole (F12):
+ 
+ ```
+ Object.keys(localStorage)
+ .filter(k => k.startsWith('emby_ratings_'))
+ .forEach(k => localStorage.removeItem(k));
+ console.log('Ratings-Cache gelöscht');
+ ```
+ 
+ 3. Change the following values (line 38-54) to your needs:
  
  - limit: The amount of items from 100 latest the plugin shows in Spotlight in random order
  
@@ -64,7 +73,7 @@ HEX: "#0000000" -> Emby Themes: Dark = #1e1e1e; Black = #000000; Light = #ffffff
  
  - enableSponsorBlock: true|false -> Enable SponsorBlock api; NOTE: You need to have installed the Sponsorblock browser extension
  
- - Manual Overrides for RT Cerified Fresh and Verified Hot status can be set in line 82 ff
+ - Manual Overrides for RT Cerified Fresh and Verified Hot status can be set in line 207 ff. (e.g. an Item is Verified Hot but has a Rating below 90)
  
  3. Optional: Add IDs of the items you want to present into spotlight-items.txt like this (nested IDs like Collection supported):
  <img width="326" height="155" alt="image" src="https://github.com/user-attachments/assets/6f48bf50-7477-4378-af0c-6f4f1f9064ee" />
@@ -74,7 +83,7 @@ HEX: "#0000000" -> Emby Themes: Dark = #1e1e1e; Black = #000000; Light = #ffffff
  5. Add ```<script src="Spotlight.js"></script>``` before ```</body>``` tag at the end of /system/dashboard-ui/index.html
 <img width="429" height="81" alt="Screenshot 2025-10-05 155428" src="https://github.com/user-attachments/assets/10f18d01-a610-45b4-bb79-7c895204023d" />
  
- 6. Clear Cache and hard reload Emby Web
+ 6. Hard reload Emby Web
 
 ## License
 

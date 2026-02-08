@@ -1,7 +1,14 @@
 /*!
  * Spotlight.js — Emby 4.9 compatible Spotlight slider with Video Backdrop Support & Custom Ratings
- * Enhanced with: YouTube Trailers, HTML5 Video, SponsorBlock, Custom Ratings (IMDb, RT, Metacritic, etc.) - Big thanks to https://github.com/Druidblack/jellyfin_ratings/tree/main
- * Generated: 2026-02-07
+ * Enhanced with: YouTube Trailers, HTML5 Video, SponsorBlock, Custom Ratings (IMDb, RT, Metacritic, etc.)
+ * Now with localStorage-based 24h caching for all ratings
+ * Generated: 2026-02-08
+ *
+ * Manually delete ratings cache in Browsers DevConsole (F12):
+ * Object.keys(localStorage)
+ * .filter(k => k.startsWith('emby_ratings_'))
+ * .forEach(k => localStorage.removeItem(k));
+ * console.log('Ratings-Cache gelöscht');
  */
 
 if (typeof GM_xmlhttpRequest === 'undefined') {
@@ -42,7 +49,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         videoVolume: 0.4,
         waitForTrailerToEnd: true,
         enableMobileVideo: false,
-        preferredVideoQuality: "hd1080",
+        preferredVideoQuality: "hd720",
         
         enableSponsorBlock: true,
         sponsorBlockCategories: ["sponsor", "intro", "outro", "selfpromo", "interaction", "preview"],
@@ -51,9 +58,127 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         enableCustomRatings: true,
         MDBLIST_API_KEY: 'YOUR_API_KEY',
         TMDB_API_KEY: 'YOUR_API_KEY',
-		KINOPOISK_API_KEY: 'YOUR_API_KEY'
+		KINOPOISK_API_KEY: 'YOUR_API_KEY',
+        CACHE_TTL_HOURS: 24 // Cache duration in Hours
     };
     
+    // ══════════════════════════════════════════════════════════════════
+    // CACHE KONFIGURATION
+    // ══════════════════════════════════════════════════════════════════
+    const CACHE_PREFIX = 'spotlight_ratings_';
+    const CACHE_TTL_MS = CONFIG.CACHE_TTL_HOURS * 60 * 60 * 1000;
+
+    const RatingsCache = {
+        /**
+         * Holt einen gecachten Wert. Gibt null zurück wenn nicht vorhanden oder abgelaufen.
+         * @param {string} key - Cache-Schlüssel (ohne Prefix)
+         * @returns {*|null} - Die gecachten Daten oder null
+         */
+        get(key) {
+            try {
+                const raw = localStorage.getItem(CACHE_PREFIX + key);
+                if (!raw) return null;
+
+                const entry = JSON.parse(raw);
+                if (!entry || !entry.timestamp || !('data' in entry)) return null;
+
+                if (Date.now() - entry.timestamp > CACHE_TTL_MS) {
+                    localStorage.removeItem(CACHE_PREFIX + key);
+                    return null;
+                }
+
+                return entry.data;
+            } catch (e) {
+                console.warn('[Spotlight Cache] Fehler beim Lesen:', key, e);
+                return null;
+            }
+        },
+
+        /**
+         * Speichert einen Wert im Cache mit aktuellem Zeitstempel.
+         * @param {string} key - Cache-Schlüssel (ohne Prefix)
+         * @param {*} data - Die zu cachenden Daten
+         */
+        set(key, data) {
+            try {
+                const entry = {
+                    timestamp: Date.now(),
+                    data: data
+                };
+                localStorage.setItem(CACHE_PREFIX + key, JSON.stringify(entry));
+            } catch (e) {
+                console.warn('[Spotlight Cache] Fehler beim Schreiben:', key, e);
+                if (e.name === 'QuotaExceededError') {
+                    this.cleanup(true);
+                    try {
+                        localStorage.setItem(CACHE_PREFIX + key, JSON.stringify({
+                            timestamp: Date.now(),
+                            data: data
+                        }));
+                    } catch (e2) {
+                        console.error('[Spotlight Cache] Cache voll, konnte nicht schreiben:', key);
+                    }
+                }
+            }
+        },
+
+        /**
+         * Bereinigt abgelaufene Cache-Einträge.
+         * @param {boolean} force - Wenn true, lösche die älteste Hälfte aller Einträge
+         */
+        cleanup(force = false) {
+            const keysToCheck = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const k = localStorage.key(i);
+                if (k && k.startsWith(CACHE_PREFIX)) {
+                    keysToCheck.push(k);
+                }
+            }
+
+            if (force) {
+                const entries = keysToCheck.map(k => {
+                    try {
+                        const raw = localStorage.getItem(k);
+                        const parsed = JSON.parse(raw);
+                        return { key: k, timestamp: parsed?.timestamp || 0 };
+                    } catch {
+                        return { key: k, timestamp: 0 };
+                    }
+                }).sort((a, b) => a.timestamp - b.timestamp);
+
+                const deleteCount = Math.max(1, Math.floor(entries.length / 2));
+                for (let i = 0; i < deleteCount; i++) {
+                    localStorage.removeItem(entries[i].key);
+                }
+                console.log(`[Spotlight Cache] Force-Cleanup: ${deleteCount} Einträge gelöscht`);
+                return;
+            }
+
+            let removed = 0;
+            keysToCheck.forEach(k => {
+                try {
+                    const raw = localStorage.getItem(k);
+                    if (!raw) return;
+                    const entry = JSON.parse(raw);
+                    if (!entry?.timestamp || (Date.now() - entry.timestamp > CACHE_TTL_MS)) {
+                        localStorage.removeItem(k);
+                        removed++;
+                    }
+                } catch {
+                    localStorage.removeItem(k);
+                    removed++;
+                }
+            });
+
+            if (removed > 0) {
+                console.log(`[Spotlight Cache] Cleanup: ${removed} abgelaufene Einträge gelöscht`);
+            }
+        }
+    };
+
+    // Beim Start abgelaufene Einträge bereinigen
+    RatingsCache.cleanup();
+
     const LOGO = {
         imdb: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/IMDb.png',
         tmdb: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/TMDB.png',
@@ -71,13 +196,13 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         myanimelist: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/mal.png',
         anilist: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/anilist.png',
 		kinopoisk: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/kinopoisk.png',
-		rogerebert: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/Roger_Ebert.png'
+		rogerebert: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/Roger_Ebert.png',
+		allocine_critics: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/allocine_crit.png',
+		allocine_audience: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/allocine_user.png'
     };
 	
 	// ══════════════════════════════════════════════════════════════════
     // MANUELLE OVERRIDES: TMDb-IDs für erzwungene Badges
-    // Füge hier TMDb-IDs hinzu, die das jeweilige Badge erhalten sollen,
-    // auch wenn die Score/Votes-Schwellenwerte nicht erreicht werden.
     // ══════════════════════════════════════════════════════════════════
     const CERTIFIED_FRESH_OVERRIDES = [
         // '550',      // Fight Club
@@ -86,35 +211,36 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
     ];
     
     const VERIFIED_HOT_OVERRIDES = [
-// Movies with a score <90, but RT verified hot nonetheless
-'812583', // Wake Up Dead Man A Knives Out Mystery
-'1272837', // 28 Years Later: The Bone Temple
-'1054867', // One Battle After Another
-'1088166', // Relay
-'1007734', // Nobody 2
-'1078605', // Weapons
-'1100988', // 28 Years Later
-'1022787', // Elio
-'575265', // Mission: Impossible - The Final Reckoning
-'574475', // Final Destination Bloodlines
-'1197306', // A Working Man
-'784524', // Magazine Dreams
-'1084199', // Companion
-'1280672', // One of Them Days
-'1082195', // The Order
-'845781', // Red One
-'1064213', // Anora
-'1034541', // Terrifier 3
-'1112426', // Stree 2
-'1079091', // It Ends with Us
-'956842', // Fly Me to the Moon
-'823464', // Godzilla x Kong: The New Empire
-'768362', // Missing
-'614939', // Bros
-'335787', // Uncharted
-'576845', // Last Night in Soho
-'568124', // Encanto
-'340558', // Fantasmas
+	// Movies with a score <90, but RT verified hot nonetheless
+	'812583', // Wake Up Dead Man A Knives Out Mystery
+	'1272837', // 28 Years Later: The Bone Temple
+	'1054867', // One Battle After Another
+	'1088166', // Relay
+	'1007734', // Nobody 2
+	'1078605', // Weapons
+	'1100988', // 28 Years Later
+	'1022787', // Elio
+	'575265', // Mission: Impossible - The Final Reckoning
+	'574475', // Final Destination Bloodlines
+	'1197306', // A Working Man
+	'784524', // Magazine Dreams
+	'1084199', // Companion
+	'1280672', // One of Them Days
+	'1082195', // The Order
+	'845781', // Red One
+	'1064213', // Anora
+	'1034541', // Terrifier 3
+	'1112426', // Stree 2
+	'1079091', // It Ends with Us
+	'956842', // Fly Me to the Moon
+	'823464', // Godzilla x Kong: The New Empire
+	'768362', // Missing
+	'614939', // Bros
+	'335787', // Uncharted
+	'576845', // Last Night in Soho
+	'568124', // Encanto
+	'340558', // Fantasmas
+	'1259102', // Eternity
     ];
     // ══════════════════════════════════════════════════════════════════
     
@@ -233,6 +359,10 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         return null;
     }
     
+    // ══════════════════════════════════════════════════════════════════
+    // MDBList Ratings (with localStorage Cache)
+    // ══════════════════════════════════════════════════════════════════
+
 	function fetchMDBListRatings(type, tmdbId, item) {
         return new Promise((resolve) => {
             if (!CONFIG.enableCustomRatings || !tmdbId) {
@@ -240,9 +370,19 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                 return;
             }
             
-            const cacheKey = `mdb_${type}_${tmdbId}`;
-            if (STATE.ratingsCache[cacheKey]) {
-                resolve(STATE.ratingsCache[cacheKey]);
+            // In-Memory Cache (session-level)
+            const memKey = `mdb_${type}_${tmdbId}`;
+            if (STATE.ratingsCache[memKey]) {
+                resolve(STATE.ratingsCache[memKey]);
+                return;
+            }
+
+            // Persistent localStorage Cache
+            const cacheKey = `mdblist_${type}_${tmdbId}`;
+            const cached = RatingsCache.get(cacheKey);
+            if (cached) {
+                STATE.ratingsCache[memKey] = cached;
+                resolve(cached);
                 return;
             }
             
@@ -263,11 +403,9 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                     
                     const ratings = [];
                     
-                    // Check manual overrides for this tmdbId
                     const isCertifiedFreshOverride = CERTIFIED_FRESH_OVERRIDES.includes(String(tmdbId));
                     const isVerifiedHotOverride    = VERIFIED_HOT_OVERRIDES.includes(String(tmdbId));
                     
-                    // ── First pass: collect all scores & votes for special logo decisions ──
                     let metacriticScore = null;
                     let metacriticVotes = null;
                     let tomatoesScore   = null;
@@ -294,35 +432,29 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                             }
                         });
                         
-                        // ── Second pass: process all ratings with correct logos ──
                         data.ratings.forEach(r => {
                             if (r.value == null) return;
                             
                             let key = r.source.toLowerCase().replace(/\s+/g, '_');
                             
-                            // ── Rotten Tomatoes Critics ──
                             if (key === 'tomatoes') {
                                 if (r.value < 60) {
                                     key = 'tomatoes_rotten';
                                 } else if (isCertifiedFreshOverride || (tomatoesScore >= 75 && tomatoesVotes >= 80)) {
-                                    // Certified Fresh: manual override OR score >= 75 AND votes >= 80
                                     key = 'tomatoes_certified';
                                 } else {
                                     key = 'tomatoes';
                                 }
                             }
-                            // ── Rotten Tomatoes Audience ──
                             else if (key.includes('popcorn')) {
                                 if (r.value < 60) {
                                     key = 'audience_rotten';
                                 } else if (isVerifiedHotOverride || (audienceScore >= 90 && audienceVotes >= 500)) {
-                                    // Verified Hot: manual override OR score >= 90% AND >= 500 verified ratings
                                     key = 'rotten_ver';
                                 } else {
                                     key = 'audience';
                                 }
                             }
-                            // ── Metacritic ──
                             else if (key === 'metacritic') {
                                 const isMustSee = metacriticScore > 81 && metacriticVotes > 14;
                                 key = isMustSee ? 'metacriticms' : 'metacritic';
@@ -352,7 +484,9 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                         year: data.year || ''
                     };
                     
-                    STATE.ratingsCache[cacheKey] = result;
+                    // Save to both caches
+                    STATE.ratingsCache[memKey] = result;
+                    RatingsCache.set(cacheKey, result);
                     resolve(result);
                 },
                 onerror() {
@@ -362,10 +496,22 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         });
     }
     
+    // ══════════════════════════════════════════════════════════════════
+    // AniList (with localStorage Cache)
+    // ══════════════════════════════════════════════════════════════════
+
     function getAnilistId(imdbId) {
         return new Promise((resolve) => {
             if (!imdbId) {
                 resolve(null);
+                return;
+            }
+
+            // Persistent cache for Wikidata lookup
+            const cacheKey = `anilist_id_${imdbId}`;
+            const cached = RatingsCache.get(cacheKey);
+            if (cached !== null) {
+                resolve(cached.id);
                 return;
             }
             
@@ -390,14 +536,18 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                         return;
                     }
                     const b = json.results.bindings;
-                    resolve(b.length && b[0].anilist?.value ? b[0].anilist.value : null);
+                    const id = b.length && b[0].anilist?.value ? b[0].anilist.value : null;
+
+                    // Cache even null results to avoid repeated lookups
+                    RatingsCache.set(cacheKey, { id: id });
+                    resolve(id);
                 },
                 onerror: () => resolve(null)
             });
         });
     }
     
-    function queryAniListById(id) {
+    function queryAniListById(id, imdbId) {
         return new Promise((resolve) => {
             const query = `
                 query($id:Int){
@@ -424,8 +574,17 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                     }
                     const m = json.data?.Media;
                     if (m?.meanScore > 0) {
-                        resolve({ id: m.id, score: m.meanScore });
+                        const result = { id: m.id, score: m.meanScore };
+                        // Cache AniList rating
+                        if (imdbId) {
+                            RatingsCache.set(`anilist_rating_${imdbId}`, result);
+                        }
+                        resolve(result);
                     } else {
+                        // Cache negative result
+                        if (imdbId) {
+                            RatingsCache.set(`anilist_rating_${imdbId}`, { id: null, score: 0 });
+                        }
                         resolve(null);
                     }
                 },
@@ -434,7 +593,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         });
     }
     
-    function queryAniListBySearch(title, year) {
+    function queryAniListBySearch(title, year, imdbId) {
         return new Promise((resolve) => {
             const query = `
                 query($search:String,$startDate:FuzzyDateInt,$endDate:FuzzyDateInt){
@@ -477,13 +636,19 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                         const titles = [m.title.romaji, m.title.english, m.title.native]
                             .filter(Boolean).map(norm);
                         if (titles.includes(t0)) {
-                            resolve({ id: m.id, score: m.meanScore });
-                        } else {
-                            resolve(null);
+                            const result = { id: m.id, score: m.meanScore };
+                            if (imdbId) {
+                                RatingsCache.set(`anilist_rating_${imdbId}`, result);
+                            }
+                            resolve(result);
+                            return;
                         }
-                    } else {
-                        resolve(null);
                     }
+                    // Cache negative result
+                    if (imdbId) {
+                        RatingsCache.set(`anilist_rating_${imdbId}`, { id: null, score: 0 });
+                    }
+                    resolve(null);
                 },
                 onerror: () => resolve(null)
             });
@@ -492,20 +657,48 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
     
     async function fetchAniListRating(imdbId, originalTitle, year) {
         if (!imdbId) return null;
+
+        // Check persistent cache first
+        const cacheKey = `anilist_rating_${imdbId}`;
+        const cached = RatingsCache.get(cacheKey);
+        if (cached !== null) {
+            if (cached.score > 0) {
+                return cached;
+            }
+            return null;
+        }
         
         const anilistId = await getAnilistId(imdbId);
         if (anilistId) {
-            return await queryAniListById(anilistId);
+            return await queryAniListById(anilistId, imdbId);
         } else if (originalTitle && year) {
-            return await queryAniListBySearch(originalTitle, parseInt(year, 10));
+            return await queryAniListBySearch(originalTitle, parseInt(year, 10), imdbId);
         }
+        // Cache negative result if no lookup path worked
+        RatingsCache.set(cacheKey, { id: null, score: 0 });
         return null;
     }
+
+    // ══════════════════════════════════════════════════════════════════
+    // Kinopoisk (with localStorage Cache)
+    // ══════════════════════════════════════════════════════════════════
 
     function fetchKinopoiskRating(title, year, type) {
         return new Promise((resolve) => {
             if (!CONFIG.KINOPOISK_API_KEY || CONFIG.KINOPOISK_API_KEY === 'DEIN_KEY_HIER') {
                 resolve(null);
+                return;
+            }
+
+            // Persistent cache
+            const cacheKey = `kinopoisk_${type}_${title}_${year}`;
+            const cached = RatingsCache.get(cacheKey);
+            if (cached !== null) {
+                if (cached.score != null) {
+                    resolve(cached);
+                } else {
+                    resolve(null);
+                }
                 return;
             }
             
@@ -532,6 +725,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                     
                     const list = data.items || data.films || [];
                     if (!list.length) {
+                        RatingsCache.set(cacheKey, { score: null });
                         resolve(null);
                         return;
                     }
@@ -540,8 +734,11 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                     const item = list.find(i => i.type === desired) || list[0];
                     
                     if (item.ratingKinopoisk != null) {
-                        resolve({ score: item.ratingKinopoisk });
+                        const result = { score: item.ratingKinopoisk };
+                        RatingsCache.set(cacheKey, result);
+                        resolve(result);
                     } else {
+                        RatingsCache.set(cacheKey, { score: null });
                         resolve(null);
                     }
                 },
@@ -549,7 +746,179 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             });
         });
     }
+	
+    // ══════════════════════════════════════════════════════════════════
+    // ALLOCINÉ RATINGS (with localStorage Cache)
+    // ══════════════════════════════════════════════════════════════════
+
+    function getAllocineId(imdbId, type) {
+        return new Promise((resolve) => {
+            if (!imdbId) { resolve(null); return; }
+
+            // In-Memory cache
+            const memKey = `allocine_id_${imdbId}`;
+            if (STATE.ratingsCache[memKey]) {
+                resolve(STATE.ratingsCache[memKey]);
+                return;
+            }
+
+            // Persistent cache
+            const cacheKey = `allocine_id_${type}_${imdbId}`;
+            const cached = RatingsCache.get(cacheKey);
+            if (cached !== null) {
+                STATE.ratingsCache[memKey] = cached.id;
+                resolve(cached.id);
+                return;
+            }
+
+            const prop = type === 'show' ? 'P1267' : 'P1265';
+            const sparql = `
+                SELECT ?allocine WHERE {
+                    ?item wdt:P345 "${imdbId}" .
+                    ?item wdt:${prop} ?allocine .
+                } LIMIT 1`;
+
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: 'https://query.wikidata.org/sparql?format=json&query=' + encodeURIComponent(sparql),
+                onload(res) {
+                    if (res.status !== 200) { resolve(null); return; }
+                    let json;
+                    try { json = JSON.parse(res.responseText); }
+                    catch { resolve(null); return; }
+                    const b = json.results.bindings;
+                    const allocineId = b.length && b[0].allocine?.value ? b[0].allocine.value : null;
+                    
+                    // Save to both caches
+                    if (allocineId) {
+                        STATE.ratingsCache[memKey] = allocineId;
+                    }
+                    RatingsCache.set(cacheKey, { id: allocineId });
+                    resolve(allocineId);
+                },
+                onerror: () => resolve(null)
+            });
+        });
+    }
+
+    function fetchAllocineRatings(imdbId, type) {
+        return new Promise((resolve) => {
+            if (!imdbId) { resolve(null); return; }
+
+            // In-Memory cache
+            const memKey = `allocine_ratings_${imdbId}`;
+            if (STATE.ratingsCache[memKey]) {
+                resolve(STATE.ratingsCache[memKey]);
+                return;
+            }
+
+            // Persistent cache
+            const cacheKey = `allocine_ratings_${type}_${imdbId}`;
+            const cached = RatingsCache.get(cacheKey);
+            if (cached !== null) {
+                if (cached.press || cached.audience) {
+                    STATE.ratingsCache[memKey] = cached;
+                    resolve(cached);
+                } else {
+                    resolve(null);
+                }
+                return;
+            }
+
+            getAllocineId(imdbId, type).then(allocineId => {
+                if (!allocineId) {
+                    RatingsCache.set(cacheKey, { press: null, audience: null });
+                    resolve(null);
+                    return;
+                }
+
+                const pathSegment = type === 'show' ? 'series' : 'film';
+                const url = `https://YOUR-CORS-PROXY-BASE-URL/https://www.allocine.fr/${pathSegment}/fichefilm_gen_cfilm=${allocineId}.html`;
+
+                GM_xmlhttpRequest({
+                    method: 'GET',
+                    url,
+                    onload(res) {
+                        if (res.status !== 200) { resolve(null); return; }
+
+                        const html = res.responseText;
+                        const foundRatings = [];
+
+                        const ratingPattern = /class="stareval-note"[^>]*>\s*([\d][,.][\d])\s*<\/span>/g;
+                        let match;
+                        while ((match = ratingPattern.exec(html)) !== null) {
+                            const val = parseFloat(match[1].replace(',', '.'));
+                            if (val > 0 && val <= 5) {
+                                foundRatings.push(val);
+                            }
+                        }
+
+                        if (foundRatings.length === 0) {
+                            const ratingItemPattern = /rating-item[\s\S]*?stareval-note[^>]*>\s*([\d][,.][\d])\s*</g;
+                            let itemMatch;
+                            while ((itemMatch = ratingItemPattern.exec(html)) !== null) {
+                                const val = parseFloat(itemMatch[1].replace(',', '.'));
+                                if (val > 0 && val <= 5) {
+                                    foundRatings.push(val);
+                                }
+                            }
+                        }
+
+                        if (foundRatings.length === 0) {
+                            const notePattern = /<span[^>]*class="[^"]*stareval-note[^"]*"[^>]*>\s*([\d][,.][\d])\s*<\/span>/g;
+                            let noteMatch;
+                            while ((noteMatch = notePattern.exec(html)) !== null) {
+                                const val = parseFloat(noteMatch[1].replace(',', '.'));
+                                if (val > 0 && val <= 5) {
+                                    foundRatings.push(val);
+                                }
+                            }
+                        }
+
+                        if (foundRatings.length === 0) {
+                            const jsonLdMatch = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g);
+                            if (jsonLdMatch) {
+                                for (const block of jsonLdMatch) {
+                                    try {
+                                        const jsonStr = block.replace(/<script type="application\/ld\+json">/, '').replace(/<\/script>/, '');
+                                        const jsonData = JSON.parse(jsonStr);
+                                        if (jsonData.aggregateRating) {
+                                            const ratingValue = parseFloat(jsonData.aggregateRating.ratingValue);
+                                            if (ratingValue > 0 && ratingValue <= 5) {
+                                                foundRatings.push(ratingValue);
+                                            }
+                                        }
+                                    } catch (e) { /* ignore */ }
+                                }
+                            }
+                        }
+
+                        if (foundRatings.length === 0) {
+                            RatingsCache.set(cacheKey, { press: null, audience: null });
+                            resolve(null);
+                            return;
+                        }
+
+                        const result = {
+                            press: foundRatings[0] || null,
+                            audience: foundRatings[1] || null
+                        };
+
+                        // Save to both caches
+                        STATE.ratingsCache[memKey] = result;
+                        RatingsCache.set(cacheKey, result);
+                        resolve(result);
+                    },
+                    onerror: () => resolve(null)
+                });
+            });
+        });
+    }
     
+    // ══════════════════════════════════════════════════════════════════
+    // SponsorBlock
+    // ══════════════════════════════════════════════════════════════════
+
     async function fetchSponsorBlockSegments(videoId) {
         if (!CONFIG.enableSponsorBlock || !videoId) return [];
         
@@ -1627,9 +1996,6 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                 fetchMDBListRatings(type, tmdbId, item).then(async (ratingsData) => {
                     if (!ratingsData) return;
                     
-                    // Ratings are already resolved with correct logos
-                    // (tomatoes_certified, rotten_ver, metacriticms etc.)
-                    // directly from MDBList data — no external RT scraping needed
                     ratingsData.ratings.forEach(rating => {
                         const ratingItem = document.createElement("div");
                         ratingItem.className = "custom-rating-item";
@@ -1650,7 +2016,6 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                         metaDiv.appendChild(ratingItem);
                     });
                     
-                    // AniList lookup (still uses IMDb for Wikidata lookup)
                     if (imdbId) {
                         const anilistRating = await fetchAniListRating(imdbId, ratingsData.originalTitle, ratingsData.year);
                         if (anilistRating && anilistRating.score) {
@@ -1673,7 +2038,6 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                         }
                     }
 
-                    // Kinopoisk lookup
                     if (ratingsData.originalTitle && ratingsData.year) {
                         const kpRating = await fetchKinopoiskRating(
                             ratingsData.originalTitle,
@@ -1699,6 +2063,50 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                             metaDiv.appendChild(ratingItem);
                         }
                     }
+					
+                    if (imdbId) {
+                        const allocineData = await fetchAllocineRatings(imdbId, type);
+                        if (allocineData) {
+                            if (allocineData.press) {
+                                const ratingItem = document.createElement("div");
+                                ratingItem.className = "custom-rating-item";
+
+                                const img = document.createElement("img");
+                                img.src = LOGO.allocine_critics;
+                                img.alt = "Allociné Presse";
+                                img.className = "custom-rating-logo";
+                                img.title = `Allociné Presse: ${allocineData.press.toFixed(1)} / 5`;
+
+                                const value = document.createElement("span");
+                                value.className = "custom-rating-value";
+                                value.textContent = allocineData.press.toFixed(1);
+
+                                ratingItem.appendChild(img);
+                                ratingItem.appendChild(value);
+                                metaDiv.appendChild(ratingItem);
+                            }
+
+                            if (allocineData.audience) {
+                                const ratingItem = document.createElement("div");
+                                ratingItem.className = "custom-rating-item";
+
+                                const img = document.createElement("img");
+                                img.src = LOGO.allocine_audience;
+                                img.alt = "Allociné Spectateurs";
+                                img.className = "custom-rating-logo";
+                                img.title = `Allociné Spectateurs: ${allocineData.audience.toFixed(1)} / 5`;
+
+                                const value = document.createElement("span");
+                                value.className = "custom-rating-value";
+                                value.textContent = allocineData.audience.toFixed(1);
+
+                                ratingItem.appendChild(img);
+                                ratingItem.appendChild(value);
+                                metaDiv.appendChild(ratingItem);
+                            }
+                        }
+                    }
+					
                 });
             }
         } else {
