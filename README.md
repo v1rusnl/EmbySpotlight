@@ -17,9 +17,9 @@ A Spotlight banner for Emby Media Server
 
  1. Download [Spotlight.js](https://github.com/v1rusnl/EmbySpotlight/blob/main/Spotlight.js) and optionally [spotlight-items.txt](https://github.com/v1rusnl/EmbySpotlight/blob/main/spotlight-items.txt), if you want to decide which items you want to present to users
  
- 2. Set up your MDBLIST_API_KEY, TMDB_API_KEY and KINOPOISK_API_KEY in line 60-62 -> The keys are needed for the custom ratings, min. MDBList key is mandatory
+ 2. Enable enableCustomRatings and set up your MDBLIST_API_KEY, TMDB_API_KEY and KINOPOISK_API_KEY in line 65-68 -> The keys are needed for the custom ratings, min. MDBList key is mandatory
  
- 3. Set your desired cache duration to store Ratings in Browser in line 63 (to minimize API calls). Cou can manually delete ratings cache in Browsers DevConsole (F12):
+ 3. Set your desired cache duration to store Ratings in Browser in line 69 (to minimize API calls). Cou can manually delete ratings cache in Browsers DevConsole (F12):
  
  ```
  Object.keys(localStorage)
@@ -27,10 +27,10 @@ A Spotlight banner for Emby Media Server
  .forEach(k => localStorage.removeItem(k));
  console.log('Erased Ratings-Cache');
  ```
- 4. For Allociné in general and Rotten Tomatoes "Verified Hot" Badge to work automatically, you need a reliant CORS proxy, e.g. https://github.com/obeone/simple-cors-proxy and you need to set its base URL in line 412 (RT) and 985 (Allociné). The reasons are that Allociné has no API and the RT "Verified Hot" badge is also present on movies with a Popcornmeter <90 + not available via MDBList API. If you do not want a CORS Proxy, you will get no Allociné ratings and an automatic "Verified Hot" badge based on simple math (Popcornmeter >89 + min. 500 verified Ratings). If you choose to use the script without CORS Proxy, you can set manual overrides for false negatives in RT "Cerified Fresh" and "Verified Hot" status by adding the TMDB-ID in line 294 ff. (e.g. an Item should be "Verified Hot" but has a Rating below 90)
+ 4. For Allociné in general and Rotten Tomatoes "Verified Hot" Badge to work automatically, you need a reliant CORS proxy, e.g. https://github.com/obeone/simple-cors-proxy and you need to set its base URL in line 72. The reasons are that Allociné has no API and the RT "Verified Hot" badge is also present on movies with a Popcornmeter <90 + not available via MDBList API. Also MDBList API does not provide Rating on some older movies for RT. If you do not want a CORS Proxy, you will get no Allociné and missing some RT ratings. Also the automatic RT "Verified Hot" badge will be based on simple math (Popcornmeter >89 + min. 500 verified Ratings). If you choose to use the script without CORS Proxy, you can set manual overrides for false negatives in RT "Cerified Fresh" and "Verified Hot" status by adding the TMDB-ID in line 203 ff. (e.g. an Item should be "Verified Hot" but has a Rating below 90)
  
  
- 3. Change the following values (line 39-59) to your needs:
+ 3. Change the following values (line 45-61) to your needs:
  
  - limit: The amount of items from 100 latest the plugin shows in Spotlight in random order
  
@@ -74,8 +74,6 @@ HEX: "#0000000" -> Emby Themes: Dark = #1e1e1e; Black = #000000; Light = #ffffff
  - preferredVideoQuality: hd720|hd1080|highres -> Video Quality of Trailer playback, hd720 should be sufficient in most cases due to image masking
  
  - enableSponsorBlock: true|false -> Enable SponsorBlock api; NOTE: You need to have installed the Sponsorblock browser extension
- 
- - enableCustomRatings: true|false -> Enable or disable Custom Ratings
  
  3. Optional: Add IDs of the items you want to present into spotlight-items.txt like this (nested IDs like Collection supported):
  <img width="326" height="155" alt="image" src="https://github.com/user-attachments/assets/6f48bf50-7477-4378-af0c-6f4f1f9064ee" />

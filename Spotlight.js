@@ -3,7 +3,13 @@
  * Enhanced with: YouTube Trailers, HTML5 Video, SponsorBlock, Custom Ratings (IMDb, RT, Metacritic, etc.)
  * localStorage-based caching for all ratings
  * RT Scraping for Certified Fresh & Verified Hot badges
- * Generated: 2026-02-08
+ * RT Direct Scraping fallback when MDBList has no RT data
+ * Generated: 2026-02-09
+ *
+ * CORS PROXY (optional):
+ * - Without: Most ratings work via MDBList API
+ * - With: Enables RT fallback scraping, exact Certified/Verified badges, and Allociné
+ * - Set CORS_PROXY_URL in CONFIG (leave empty '' to disable)
  *
  * Manually delete ratings cache in Browsers DevConsole (F12):
  * Object.keys(localStorage)
@@ -38,10 +44,10 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         imageWidth: 1900,
         limit: 10,
         autoplayInterval: 10000,
-		vignetteColorTop:    "#1e1e1e",
-		vignetteColorBottom: "#1e1e1e",
-		vignetteColorLeft:   "#1e1e1e",
-		vignetteColorRight:  "#1e1e1e",
+        vignetteColorTop:    "#1e1e1e",
+        vignetteColorBottom: "#1e1e1e",
+        vignetteColorLeft:   "#1e1e1e",
+        vignetteColorRight:  "#1e1e1e",
         playbuttonColor: "var(--theme-primary-color)",
         customItemsFile: "spotlight-items.txt",
         
@@ -52,15 +58,18 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         enableMobileVideo: false,
         preferredVideoQuality: "hd720",
         
-        enableSponsorBlock: true,
+        enableSponsorBlock: true, //Sponsorblock extension needs to be installed on the client
         sponsorBlockCategories: ["sponsor", "intro", "outro", "selfpromo", "interaction", "preview"],
         
         // Custom Ratings Config
         enableCustomRatings: true,
         MDBLIST_API_KEY: 'YOUR_API_KEY',
         TMDB_API_KEY: 'YOUR_API_KEY',
-		KINOPOISK_API_KEY: 'YOUR_API_KEY',
-        CACHE_TTL_HOURS: 24 // Cache duration in Hours
+        KINOPOISK_API_KEY: 'YOUR_API_KEY',
+        CACHE_TTL_HOURS: 168, // Cache duration in Hours
+        
+        // CORS Proxy URL für RT und Allociné Scraping (leer lassen wenn nicht verfügbar)
+        CORS_PROXY_URL: '' // e.g. 'https://cors.yourdomain.com/proxy/'
     };
     
     // ══════════════════════════════════════════════════════════════════
@@ -182,13 +191,13 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         letterboxd: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/letterboxd.png',
         myanimelist: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/mal.png',
         anilist: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/anilist.png',
-		kinopoisk: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/kinopoisk.png',
-		rogerebert: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/Roger_Ebert.png',
-		allocine_critics: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/allocine_crit.png',
-		allocine_audience: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/allocine_user.png'
+        kinopoisk: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/kinopoisk.png',
+        rogerebert: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/Roger_Ebert.png',
+        allocine_critics: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/allocine_crit.png',
+        allocine_audience: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/allocine_user.png'
     };
-	
-	// ══════════════════════════════════════════════════════════════════
+    
+    // ══════════════════════════════════════════════════════════════════
     // MANUELLE OVERRIDES (Fallback falls RT-Scrape fehlschlägt)
     // ══════════════════════════════════════════════════════════════════
     const CERTIFIED_FRESH_OVERRIDES = [
@@ -196,35 +205,35 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
     ];
     
     const VERIFIED_HOT_OVERRIDES = [
-		// Movies with a score <90, but RT verified hot nonetheless
-		'812583', // Wake Up Dead Man A Knives Out Mystery
-		'1272837', // 28 Years Later: The Bone Temple
-		'1054867', // One Battle After Another
-		'1088166', // Relay
-		'1007734', // Nobody 2
-		'1078605', // Weapons
-		'1022787', // Elio
-		'575265', // Mission: Impossible - The Final Reckoning
-		'574475', // Final Destination Bloodlines
-		'1197306', // A Working Man
-		'784524', // Magazine Dreams
-		'1084199', // Companion
-		'1280672', // One of Them Days
-		'1082195', // The Order
-		'845781', // Red One
-		'1064213', // Anora
-		'1034541', // Terrifier 3
-		'1112426', // Stree 2
-		'1079091', // It Ends with Us
-		'956842', // Fly Me to the Moon
-		'823464', // Godzilla x Kong: The New Empire
-		'768362', // Missing
-		'614939', // Bros
-		'335787', // Uncharted
-		'576845', // Last Night in Soho
-		'568124', // Encanto
-		'340558', // Fantasmas
-		'1259102', // Eternity
+        // Movies with a score <90, but RT verified hot nonetheless
+        '812583', // Wake Up Dead Man A Knives Out Mystery
+        '1272837', // 28 Years Later: The Bone Temple
+        '1054867', // One Battle After Another
+        '1088166', // Relay
+        '1007734', // Nobody 2
+        '1078605', // Weapons
+        '1022787', // Elio
+        '575265', // Mission: Impossible - The Final Reckoning
+        '574475', // Final Destination Bloodlines
+        '1197306', // A Working Man
+        '784524', // Magazine Dreams
+        '1084199', // Companion
+        '1280672', // One of Them Days
+        '1082195', // The Order
+        '845781', // Red One
+        '1064213', // Anora
+        '1034541', // Terrifier 3
+        '1112426', // Stree 2
+        '1079091', // It Ends with Us
+        '956842', // Fly Me to the Moon
+        '823464', // Godzilla x Kong: The New Empire
+        '768362', // Missing
+        '614939', // Bros
+        '335787', // Uncharted
+        '576845', // Last Night in Soho
+        '568124', // Encanto
+        '340558', // Fantasmas
+        '1259102', // Eternity
     ];
     // ══════════════════════════════════════════════════════════════════
     
@@ -281,34 +290,34 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             }
         });
     }
-	
-	function parseColor(color) {
-		if (!color) return { r: 0, g: 0, b: 0, a: 1 };
-		
-		color = color.trim();
-		
-		const hexMatch = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})?$/i.exec(color);
-		if (hexMatch) {
-			return {
-				r: parseInt(hexMatch[1], 16),
-				g: parseInt(hexMatch[2], 16),
-				b: parseInt(hexMatch[3], 16),
-				a: hexMatch[4] ? parseInt(hexMatch[4], 16) / 255 : 1
-			};
-		}
-		
-		const rgbaMatch = color.match(/rgba?\(\s*([\d.]+)\s*[,/]\s*([\d.]+)\s*[,/]\s*([\d.]+)\s*(?:[,/]\s*([\d.]+))?\s*\)/);
-		if (rgbaMatch) {
-			return {
-				r: parseInt(rgbaMatch[1]),
-				g: parseInt(rgbaMatch[2]),
-				b: parseInt(rgbaMatch[3]),
-				a: rgbaMatch[4] !== undefined ? parseFloat(rgbaMatch[4]) : 1
-			};
-		}
-		
-		return { r: 0, g: 0, b: 0, a: 1 };
-	}
+    
+    function parseColor(color) {
+        if (!color) return { r: 0, g: 0, b: 0, a: 1 };
+        
+        color = color.trim();
+        
+        const hexMatch = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})?$/i.exec(color);
+        if (hexMatch) {
+            return {
+                r: parseInt(hexMatch[1], 16),
+                g: parseInt(hexMatch[2], 16),
+                b: parseInt(hexMatch[3], 16),
+                a: hexMatch[4] ? parseInt(hexMatch[4], 16) / 255 : 1
+            };
+        }
+        
+        const rgbaMatch = color.match(/rgba?\(\s*([\d.]+)\s*[,/]\s*([\d.]+)\s*[,/]\s*([\d.]+)\s*(?:[,/]\s*([\d.]+))?\s*\)/);
+        if (rgbaMatch) {
+            return {
+                r: parseInt(rgbaMatch[1]),
+                g: parseInt(rgbaMatch[2]),
+                b: parseInt(rgbaMatch[3]),
+                a: rgbaMatch[4] !== undefined ? parseFloat(rgbaMatch[4]) : 1
+            };
+        }
+        
+        return { r: 0, g: 0, b: 0, a: 1 };
+    }
     
     function shuffleArray(array) {
         const shuffled = [...array];
@@ -341,6 +350,14 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             return item.ProviderIds.Tmdb;
         }
         return null;
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // Helper: Check if CORS Proxy is configured
+    // ══════════════════════════════════════════════════════════════════
+    
+    function isCorsProxyConfigured() {
+        return CONFIG.CORS_PROXY_URL && CONFIG.CORS_PROXY_URL.trim() !== '';
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -392,7 +409,11 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
      */
     function fetchRTCertifiedStatus(imdbId, type) {
         return new Promise((resolve) => {
-            if (!imdbId) { resolve({ criticsCertified: null, audienceCertified: null }); return; }
+            // Prüfe ob CORS Proxy verfügbar ist
+            if (!imdbId || !isCorsProxyConfigured()) {
+                resolve({ criticsCertified: null, audienceCertified: null });
+                return;
+            }
 
             const cacheKey = `rt_certified_${type}_${imdbId}`;
             const cached = RatingsCache.get(cacheKey);
@@ -409,7 +430,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                     return;
                 }
 
-                const rtUrl = `https://YOUR-CORS-PROXY-BASEURL/https://www.rottentomatoes.com/${slug}`;
+                const rtUrl = `${CONFIG.CORS_PROXY_URL}https://www.rottentomatoes.com/${slug}`;
 
                 GM_xmlhttpRequest({
                     method: 'GET',
@@ -509,12 +530,128 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             });
         });
     }
+
+    // ══════════════════════════════════════════════════════════════════
+    // Rotten Tomatoes: Direct Scraping (when MDBList has no RT data)
+    // ══════════════════════════════════════════════════════════════════
+
+    function fetchRottenTomatoesDirectly(imdbId, type) {
+        return new Promise((resolve) => {
+            // Prüfe ob CORS Proxy verfügbar ist
+            if (!imdbId || !isCorsProxyConfigured()) {
+                console.log('[Spotlight] RT Direct Scraping übersprungen - kein CORS Proxy konfiguriert');
+                resolve(null);
+                return;
+            }
+
+            const cacheKey = `rt_direct_${type}_${imdbId}`;
+            const cached = RatingsCache.get(cacheKey);
+            if (cached !== null) {
+                if (cached.criticsScore !== null || cached.audienceScore !== null) {
+                    resolve(cached);
+                } else {
+                    resolve(null);
+                }
+                return;
+            }
+
+            getRTSlug(imdbId).then(slug => {
+                if (!slug) {
+                    console.warn('[Spotlight] Kein RT Slug für', imdbId);
+                    RatingsCache.set(cacheKey, { criticsScore: null, audienceScore: null, criticsCertified: false, audienceCertified: false });
+                    resolve(null);
+                    return;
+                }
+
+                const rtUrl = `${CONFIG.CORS_PROXY_URL}https://www.rottentomatoes.com/${slug}`;
+                console.log('[Spotlight] RT Direct Scrape für', imdbId, '->', slug);
+
+                GM_xmlhttpRequest({
+                    method: 'GET',
+                    url: rtUrl,
+                    onload(res) {
+                        if (res.status !== 200) {
+                            console.warn('[Spotlight] RT direct scrape failed:', res.status);
+                            RatingsCache.set(cacheKey, { criticsScore: null, audienceScore: null, criticsCertified: false, audienceCertified: false });
+                            resolve(null);
+                            return;
+                        }
+
+                        const html = res.responseText;
+                        let criticsScore = null;
+                        let criticsCertified = false;
+                        let audienceScore = null;
+                        let audienceCertified = false;
+
+                        // Parse embedded JSON (most reliable)
+                        const jsonMatch = html.match(
+                            /<script[^>]*id="media-scorecard-json"[^>]*type="application\/json"[^>]*>([\s\S]*?)<\/script>/
+                        );
+
+                        if (jsonMatch) {
+                            try {
+                                const scoreData = JSON.parse(jsonMatch[1]);
+
+                                // Critics Score
+                                if (scoreData.criticsScore) {
+                                    const likedCount = scoreData.criticsScore.likedCount || 0;
+                                    const notLikedCount = scoreData.criticsScore.notLikedCount || 0;
+                                    const total = likedCount + notLikedCount;
+                                    if (total > 0) {
+                                        criticsScore = Math.round((likedCount / total) * 100);
+                                    }
+                                    criticsCertified = scoreData.criticsScore.certified === true;
+                                }
+
+                                // Audience Score
+                                if (scoreData.audienceScore) {
+                                    const likedCount = scoreData.audienceScore.likedCount || 0;
+                                    const notLikedCount = scoreData.audienceScore.notLikedCount || 0;
+                                    const total = likedCount + notLikedCount;
+                                    if (total > 0) {
+                                        audienceScore = Math.round((likedCount / total) * 100);
+                                    }
+                                    audienceCertified = scoreData.audienceScore.certifiedFresh === 'verified_hot' ||
+                                                       scoreData.audienceScore.certified === true;
+                                }
+
+                                console.log(`[Spotlight] RT Direct: Critics=${criticsScore}% (certified=${criticsCertified}), Audience=${audienceScore}% (verified=${audienceCertified})`);
+
+                            } catch (e) {
+                                console.warn('[Spotlight] RT JSON parse error:', e);
+                            }
+                        }
+
+                        // Cache the results
+                        const result = {
+                            criticsScore,
+                            criticsCertified,
+                            audienceScore,
+                            audienceCertified
+                        };
+                        
+                        RatingsCache.set(cacheKey, result);
+                        
+                        if (criticsScore !== null || audienceScore !== null) {
+                            resolve(result);
+                        } else {
+                            resolve(null);
+                        }
+                    },
+                    onerror() {
+                        RatingsCache.set(cacheKey, { criticsScore: null, audienceScore: null, criticsCertified: false, audienceCertified: false });
+                        resolve(null);
+                    }
+                });
+            });
+        });
+    }
     
     // ══════════════════════════════════════════════════════════════════
     // MDBList Ratings (with localStorage Cache + RT Scraping)
     // ══════════════════════════════════════════════════════════════════
 
-	function fetchMDBListRatings(type, tmdbId, item) {
+    function fetchMDBListRatings(type, tmdbId, item) {
         return new Promise((resolve) => {
             if (!CONFIG.enableCustomRatings || !tmdbId) {
                 resolve(null);
@@ -563,6 +700,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                     let tomatoesVotes   = null;
                     let audienceScore   = null;
                     let audienceVotes   = null;
+                    let hasRTFromMDBList = false;
                     
                     if (Array.isArray(data.ratings)) {
                         // First pass: collect scores
@@ -577,10 +715,12 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                             else if (key === 'tomatoes') {
                                 tomatoesScore = r.value;
                                 tomatoesVotes = r.votes;
+                                hasRTFromMDBList = true;
                             }
                             else if (key.includes('popcorn') || key.includes('audience')) {
                                 audienceScore = r.value;
                                 audienceVotes = r.votes;
+                                hasRTFromMDBList = true;
                             }
                         });
                         
@@ -619,7 +759,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                             else if (key.includes('metacritic') && key.includes('user')) key = 'metacriticus';
                             else if (key.includes('trakt')) key = 'trakt';
                             else if (key.includes('letterboxd')) key = 'letterboxd';
-							else if (key.includes('roger') || key.includes('ebert')) key = 'rogerebert';
+                            else if (key.includes('roger') || key.includes('ebert')) key = 'rogerebert';
                             else if (key.includes('myanimelist')) key = 'myanimelist';
                             
                             const logoUrl = LOGO[key];
@@ -642,7 +782,8 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                         originalTitle: data.original_title || data.title || '',
                         year: data.year || '',
                         _tomatoesScore: tomatoesScore,
-                        _audienceScore: audienceScore
+                        _audienceScore: audienceScore,
+                        _hasRTFromMDBList: hasRTFromMDBList
                     };
                     
                     // Save to both caches
@@ -899,7 +1040,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             });
         });
     }
-	
+    
     // ══════════════════════════════════════════════════════════════════
     // ALLOCINÉ RATINGS (with localStorage Cache)
     // ══════════════════════════════════════════════════════════════════
@@ -953,7 +1094,12 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 
     function fetchAllocineRatings(imdbId, type) {
         return new Promise((resolve) => {
-            if (!imdbId) { resolve(null); return; }
+            // Prüfe ob CORS Proxy verfügbar ist
+            if (!imdbId || !isCorsProxyConfigured()) {
+                console.log('[Spotlight] Allociné übersprungen - kein CORS Proxy konfiguriert');
+                resolve(null);
+                return;
+            }
 
             const memKey = `allocine_ratings_${imdbId}`;
             if (STATE.ratingsCache[memKey]) {
@@ -981,8 +1127,8 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                 }
 
                 const pathSegment = type === 'show' ? 'series' : 'film';
-		        const fileSegment = type === 'show' ? `ficheserie_gen_cserie=${allocineId}` : `fichefilm_gen_cfilm=${allocineId}`;
-		        const url = `https://YOUR-CORS-PROXY-BASEURL/https://www.allocine.fr/${pathSegment}/${fileSegment}.html`;
+                const fileSegment = type === 'show' ? `ficheserie_gen_cserie=${allocineId}` : `fichefilm_gen_cfilm=${allocineId}`;
+                const url = `${CONFIG.CORS_PROXY_URL}https://www.allocine.fr/${pathSegment}/${fileSegment}.html`;
 
                 GM_xmlhttpRequest({
                     method: 'GET',
@@ -1225,29 +1371,29 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         
         const bgColor = CONFIG.backgroundColor;
         const playbuttonColor = CONFIG.playbuttonColor;
-		const top = parseColor(CONFIG.vignetteColorTop);
-		const bottom = parseColor(CONFIG.vignetteColorBottom);
-		const left = parseColor(CONFIG.vignetteColorLeft);
-		const right = parseColor(CONFIG.vignetteColorRight);
+        const top = parseColor(CONFIG.vignetteColorTop);
+        const bottom = parseColor(CONFIG.vignetteColorBottom);
+        const left = parseColor(CONFIG.vignetteColorLeft);
+        const right = parseColor(CONFIG.vignetteColorRight);
 
-		function gradientSteps(c) {
-			const r = c.r, g = c.g, b = c.b;
-			return `
-				rgba(${r}, ${g}, ${b}, 1)    0%, 
-				rgba(${r}, ${g}, ${b}, 1)    2%,
-				rgba(${r}, ${g}, ${b}, 1)    4%,
-				rgba(${r}, ${g}, ${b}, 0.99) 6%,
-				rgba(${r}, ${g}, ${b}, 0.97) 8%,
-				rgba(${r}, ${g}, ${b}, 0.95) 10%,
-				rgba(${r}, ${g}, ${b}, 0.9)  15%,
-				rgba(${r}, ${g}, ${b}, 0.85) 20%,
-				rgba(${r}, ${g}, ${b}, 0.75) 30%,
-				rgba(${r}, ${g}, ${b}, 0.6)  40%,
-				rgba(${r}, ${g}, ${b}, 0.4)  50%,
-				rgba(${r}, ${g}, ${b}, 0.2)  70%,
-				transparent                  100%`;
-		}
-	
+        function gradientSteps(c) {
+            const r = c.r, g = c.g, b = c.b;
+            return `
+                rgba(${r}, ${g}, ${b}, 1)    0%, 
+                rgba(${r}, ${g}, ${b}, 1)    2%,
+                rgba(${r}, ${g}, ${b}, 1)    4%,
+                rgba(${r}, ${g}, ${b}, 0.99) 6%,
+                rgba(${r}, ${g}, ${b}, 0.97) 8%,
+                rgba(${r}, ${g}, ${b}, 0.95) 10%,
+                rgba(${r}, ${g}, ${b}, 0.9)  15%,
+                rgba(${r}, ${g}, ${b}, 0.85) 20%,
+                rgba(${r}, ${g}, ${b}, 0.75) 30%,
+                rgba(${r}, ${g}, ${b}, 0.6)  40%,
+                rgba(${r}, ${g}, ${b}, 0.4)  50%,
+                rgba(${r}, ${g}, ${b}, 0.2)  70%,
+                transparent                  100%`;
+        }
+    
         const css = `
         .spotlight-container { 
             width: 100%;
@@ -1370,19 +1516,19 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             opacity: 1;
         }
         
-		.spotlight .youtube-backdrop iframe {
-			width: 100%;
-			height: 100%;
-			position: absolute;
-			top: 0;
-			left: 0;
-			opacity: 0;
-			transition: opacity 0.5s ease-in;
-		}
+        .spotlight .youtube-backdrop iframe {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            opacity: 0;
+            transition: opacity 0.5s ease-in;
+        }
 
-		.spotlight .youtube-backdrop.video-ready iframe {
-			opacity: 1;
-		}
+        .spotlight .youtube-backdrop.video-ready iframe {
+            opacity: 1;
+        }
         
         .spotlight .video-placeholder {
             width: 100%;
@@ -1437,9 +1583,9 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             height: 50%;
             pointer-events: none;
             z-index: 6;
-			background: linear-gradient(to bottom, ${gradientSteps(top)});
+            background: linear-gradient(to bottom, ${gradientSteps(top)});
         }
-		
+        
         .spotlight .banner-vignette-bottom {
             position: absolute;
             bottom: 0;
@@ -1448,7 +1594,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             height: 50%;
             pointer-events: none;
             z-index: 6;
-			background: linear-gradient(to top, ${gradientSteps(bottom)});
+            background: linear-gradient(to top, ${gradientSteps(bottom)});
         }
         
         .spotlight .banner-logo {
@@ -2144,7 +2290,9 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                 fetchMDBListRatings(type, tmdbId, item).then(async (ratingsData) => {
                     if (!ratingsData) return;
                     
-                    // Render all rating badges
+                    const hasRTFromMDBList = ratingsData._hasRTFromMDBList;
+                    
+                    // Render all rating badges from MDBList
                     ratingsData.ratings.forEach(rating => {
                         const ratingItem = document.createElement("div");
                         ratingItem.className = "custom-rating-item";
@@ -2166,71 +2314,132 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                         metaDiv.appendChild(ratingItem);
                     });
                     
-                    // ── Async RT scraping to correct Certified Fresh + Verified Hot ──
-                    const tomatoesScore = ratingsData._tomatoesScore;
-                    const audienceScore = ratingsData._audienceScore;
-                    
-                    if (imdbId && (tomatoesScore >= 60 || audienceScore >= 60)) {
-                        fetchRTCertifiedStatus(imdbId, type).then(rtStatus => {
-                            // Find the critics and audience badge img elements
-                            const allLogos = metaDiv.querySelectorAll('.custom-rating-logo');
-                            
-                            allLogos.forEach(logoImg => {
-                                const ratingType = logoImg.dataset.ratingType;
-                                const currentSource = logoImg.dataset.source;
+                    // ══════════════════════════════════════════════════════════════════
+                    // RT FALLBACK: If MDBList has no RT data, scrape directly from RT
+                    // ══════════════════════════════════════════════════════════════════
+                    if (!hasRTFromMDBList && imdbId) {
+                        console.log('[Spotlight] MDBList hat keine RT-Daten für', item.Name, '- scrape direkt von RT');
+                        const rtDirect = await fetchRottenTomatoesDirectly(imdbId, type);
+                        
+                        if (rtDirect) {
+                            // Render Critics Score from direct scrape
+                            if (rtDirect.criticsScore !== null) {
+                                const criticsLogo = rtDirect.criticsScore < 60 ? 'tomatoes_rotten' :
+                                                   (rtDirect.criticsCertified ? 'tomatoes_certified' : 'tomatoes');
                                 
-                                // ── Update Critics badge ──
-                                if (ratingType === 'critics' && tomatoesScore >= 60 && rtStatus.criticsCertified !== null) {
-                                    if (rtStatus.criticsCertified === true && currentSource !== 'tomatoes_certified') {
-                                        logoImg.src = LOGO.tomatoes_certified;
-                                        logoImg.dataset.source = 'tomatoes_certified';
-                                        console.log(`[Spotlight] Upgraded critics badge to Certified Fresh for ${item.Name}`);
-                                    } else if (rtStatus.criticsCertified === false && currentSource === 'tomatoes_certified') {
-                                        logoImg.src = LOGO.tomatoes;
-                                        logoImg.dataset.source = 'tomatoes';
-                                        console.log(`[Spotlight] Downgraded critics badge from Certified Fresh for ${item.Name}`);
-                                    }
-                                }
+                                const ratingItem = document.createElement("div");
+                                ratingItem.className = "custom-rating-item";
                                 
-                                // ── Update Audience badge ──
-                                if (ratingType === 'audience' && audienceScore >= 60 && rtStatus.audienceCertified !== null) {
-                                    if (rtStatus.audienceCertified === true && currentSource !== 'rotten_ver') {
-                                        logoImg.src = LOGO.rotten_ver;
-                                        logoImg.dataset.source = 'rotten_ver';
-                                        console.log(`[Spotlight] Upgraded audience badge to Verified Hot for ${item.Name}`);
-                                    } else if (rtStatus.audienceCertified === false && currentSource === 'rotten_ver') {
-                                        logoImg.src = LOGO.audience;
-                                        logoImg.dataset.source = 'audience';
-                                        console.log(`[Spotlight] Downgraded audience badge from Verified Hot for ${item.Name}`);
-                                    }
-                                }
-                            });
+                                const img = document.createElement("img");
+                                img.src = LOGO[criticsLogo];
+                                img.alt = "Rotten Tomatoes";
+                                img.className = "custom-rating-logo";
+                                img.title = `Rotten Tomatoes: ${rtDirect.criticsScore}%`;
+                                img.dataset.source = criticsLogo;
+                                
+                                const value = document.createElement("span");
+                                value.className = "custom-rating-value";
+                                value.textContent = rtDirect.criticsScore;
+                                
+                                ratingItem.appendChild(img);
+                                ratingItem.appendChild(value);
+                                metaDiv.appendChild(ratingItem);
+                            }
                             
-                            // Update the persistent cache with corrected badge keys
-                            const cacheKey = `mdblist_${type}_${tmdbId}`;
-                            const updatedRatings = ratingsData.ratings.map(r => {
-                                if (r._isCritics && tomatoesScore >= 60 && rtStatus.criticsCertified !== null) {
-                                    if (rtStatus.criticsCertified === true) {
-                                        return { ...r, key: 'tomatoes_certified', logo: LOGO.tomatoes_certified };
-                                    } else if (rtStatus.criticsCertified === false && r.key === 'tomatoes_certified') {
-                                        return { ...r, key: 'tomatoes', logo: LOGO.tomatoes };
+                            // Render Audience Score from direct scrape
+                            if (rtDirect.audienceScore !== null) {
+                                const audienceLogo = rtDirect.audienceScore < 60 ? 'audience_rotten' :
+                                                    (rtDirect.audienceCertified ? 'rotten_ver' : 'audience');
+                                
+                                const ratingItem = document.createElement("div");
+                                ratingItem.className = "custom-rating-item";
+                                
+                                const img = document.createElement("img");
+                                img.src = LOGO[audienceLogo];
+                                img.alt = "RT Audience";
+                                img.className = "custom-rating-logo";
+                                img.title = `RT Audience: ${rtDirect.audienceScore}%`;
+                                img.dataset.source = audienceLogo;
+                                
+                                const value = document.createElement("span");
+                                value.className = "custom-rating-value";
+                                value.textContent = rtDirect.audienceScore;
+                                
+                                ratingItem.appendChild(img);
+                                ratingItem.appendChild(value);
+                                metaDiv.appendChild(ratingItem);
+                            }
+                        }
+                    }
+                    // ══════════════════════════════════════════════════════════════════
+                    // RT UPGRADE: If MDBList has RT data, check for Certified/Verified
+                    // ══════════════════════════════════════════════════════════════════
+                    else if (hasRTFromMDBList && imdbId) {
+                        const tomatoesScore = ratingsData._tomatoesScore;
+                        const audienceScore = ratingsData._audienceScore;
+                        
+                        if (tomatoesScore >= 60 || audienceScore >= 60) {
+                            fetchRTCertifiedStatus(imdbId, type).then(rtStatus => {
+                                // Find the critics and audience badge img elements
+                                const allLogos = metaDiv.querySelectorAll('.custom-rating-logo');
+                                
+                                allLogos.forEach(logoImg => {
+                                    const ratingType = logoImg.dataset.ratingType;
+                                    const currentSource = logoImg.dataset.source;
+                                    
+                                    // ── Update Critics badge ──
+                                    if (ratingType === 'critics' && tomatoesScore >= 60 && rtStatus.criticsCertified !== null) {
+                                        if (rtStatus.criticsCertified === true && currentSource !== 'tomatoes_certified') {
+                                            logoImg.src = LOGO.tomatoes_certified;
+                                            logoImg.dataset.source = 'tomatoes_certified';
+                                            console.log(`[Spotlight] Upgraded critics badge to Certified Fresh for ${item.Name}`);
+                                        } else if (rtStatus.criticsCertified === false && currentSource === 'tomatoes_certified') {
+                                            logoImg.src = LOGO.tomatoes;
+                                            logoImg.dataset.source = 'tomatoes';
+                                            console.log(`[Spotlight] Downgraded critics badge from Certified Fresh for ${item.Name}`);
+                                        }
                                     }
-                                }
-                                if (r._isAudience && audienceScore >= 60 && rtStatus.audienceCertified !== null) {
-                                    if (rtStatus.audienceCertified === true) {
-                                        return { ...r, key: 'rotten_ver', logo: LOGO.rotten_ver };
-                                    } else if (rtStatus.audienceCertified === false && r.key === 'rotten_ver') {
-                                        return { ...r, key: 'audience', logo: LOGO.audience };
+                                    
+                                    // ── Update Audience badge ──
+                                    if (ratingType === 'audience' && audienceScore >= 60 && rtStatus.audienceCertified !== null) {
+                                        if (rtStatus.audienceCertified === true && currentSource !== 'rotten_ver') {
+                                            logoImg.src = LOGO.rotten_ver;
+                                            logoImg.dataset.source = 'rotten_ver';
+                                            console.log(`[Spotlight] Upgraded audience badge to Verified Hot for ${item.Name}`);
+                                        } else if (rtStatus.audienceCertified === false && currentSource === 'rotten_ver') {
+                                            logoImg.src = LOGO.audience;
+                                            logoImg.dataset.source = 'audience';
+                                            console.log(`[Spotlight] Downgraded audience badge from Verified Hot for ${item.Name}`);
+                                        }
                                     }
-                                }
-                                return r;
+                                });
+                                
+                                // Update the persistent cache with corrected badge keys
+                                const cacheKey = `mdblist_${type}_${tmdbId}`;
+                                const updatedRatings = ratingsData.ratings.map(r => {
+                                    if (r._isCritics && tomatoesScore >= 60 && rtStatus.criticsCertified !== null) {
+                                        if (rtStatus.criticsCertified === true) {
+                                            return { ...r, key: 'tomatoes_certified', logo: LOGO.tomatoes_certified };
+                                        } else if (rtStatus.criticsCertified === false && r.key === 'tomatoes_certified') {
+                                            return { ...r, key: 'tomatoes', logo: LOGO.tomatoes };
+                                        }
+                                    }
+                                    if (r._isAudience && audienceScore >= 60 && rtStatus.audienceCertified !== null) {
+                                        if (rtStatus.audienceCertified === true) {
+                                            return { ...r, key: 'rotten_ver', logo: LOGO.rotten_ver };
+                                        } else if (rtStatus.audienceCertified === false && r.key === 'rotten_ver') {
+                                            return { ...r, key: 'audience', logo: LOGO.audience };
+                                        }
+                                    }
+                                    return r;
+                                });
+                                
+                                const updatedResult = { ...ratingsData, ratings: updatedRatings };
+                                const memKey = `mdb_${type}_${tmdbId}`;
+                                STATE.ratingsCache[memKey] = updatedResult;
+                                RatingsCache.set(cacheKey, updatedResult);
                             });
-                            
-                            const updatedResult = { ...ratingsData, ratings: updatedRatings };
-                            const memKey = `mdb_${type}_${tmdbId}`;
-                            STATE.ratingsCache[memKey] = updatedResult;
-                            RatingsCache.set(cacheKey, updatedResult);
-                        });
+                        }
                     }
                     
                     // ── AniList ──
@@ -2282,7 +2491,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                             metaDiv.appendChild(ratingItem);
                         }
                     }
-					
+                    
                     // ── Allociné ──
                     if (imdbId) {
                         const allocineData = await fetchAllocineRatings(imdbId, type);
@@ -2326,7 +2535,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                             }
                         }
                     }
-					
+                    
                 });
             }
         } else {
@@ -2463,74 +2672,74 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                             }
                         }
                     },
-					'onStateChange': (event) => {
-						const playerState = event.data;
-						console.log(`[Spotlight] YouTube State Change: ${playerState} für ${item.Name}`);
-						
-						if (playerState === YT.PlayerState.PLAYING) {
-							console.log(`[Spotlight] Video spielt: ${item.Name}`);
-							STATE.isPaused = false;
-							updatePauseButtonIcon();
-							startSponsorBlockMonitoring(event.target, videoId, item.Id);
-							
-							const ytContainer = document.getElementById(containerId);
-							console.log(`[Spotlight] YouTube Container neu gefunden:`, ytContainer);
-							
-							if (!ytContainer) {
-								console.error(`[Spotlight] Container ${containerId} nicht im DOM gefunden!`);
-								return;
-							}
-							
-							const wrapper = ytContainer.closest('.video-backdrop-wrapper');
-							console.log(`[Spotlight] Wrapper gefunden:`, wrapper);
-							
-							let currentPlaceholder = null;
-							if (wrapper) {
-								currentPlaceholder = wrapper.querySelector('.video-placeholder');
-								console.log(`[Spotlight] Placeholder in wrapper gefunden:`, currentPlaceholder);
-							}
-							
-							if (!currentPlaceholder) {
-								console.warn(`[Spotlight] KEIN Placeholder gefunden für ${item.Name}!`);
-								ytContainer.classList.add('video-ready');
-								return;
-							}
-							
-							if (!currentPlaceholder.classList.contains('hidden')) {
-								console.log(`[Spotlight] Blende Placeholder aus für: ${item.Name}`);
-								setTimeout(() => {
-									ytContainer.classList.add('video-ready');
-									setTimeout(() => {
-										currentPlaceholder.classList.add('hidden');
-										console.log(`[Spotlight] Placeholder ausgeblendet!`);
-									}, 300);
-								}, 500);
-							} else {
-								console.log(`[Spotlight] Placeholder bereits versteckt`);
-								ytContainer.classList.add('video-ready');
-							}
-						} else if (playerState === YT.PlayerState.PAUSED) {
-							console.log(`[Spotlight] Video pausiert`);
-							STATE.isPaused = true;
-							updatePauseButtonIcon();
-							stopSponsorBlockMonitoring(item.Id);
-						} else if (playerState === YT.PlayerState.ENDED) {
-							console.log(`[Spotlight] YouTube Trailer beendet: ${item.Name}`);
-							STATE.isPaused = false;
-							stopSponsorBlockMonitoring(item.Id);
-							if (CONFIG.waitForTrailerToEnd) {
-								setTimeout(() => {
-									const rightArrow = document.querySelector('.spotlight .arrow.right');
-									if (rightArrow) {
-										console.log('[Spotlight] Auto-Advance nach Trailer-Ende');
-										rightArrow.click();
-									}
-								}, 500);
-							}
-						} else if (playerState === YT.PlayerState.BUFFERING) {
-							console.log(`[Spotlight] Video buffert...`);
-						}
-					}
+                    'onStateChange': (event) => {
+                        const playerState = event.data;
+                        console.log(`[Spotlight] YouTube State Change: ${playerState} für ${item.Name}`);
+                        
+                        if (playerState === YT.PlayerState.PLAYING) {
+                            console.log(`[Spotlight] Video spielt: ${item.Name}`);
+                            STATE.isPaused = false;
+                            updatePauseButtonIcon();
+                            startSponsorBlockMonitoring(event.target, videoId, item.Id);
+                            
+                            const ytContainer = document.getElementById(containerId);
+                            console.log(`[Spotlight] YouTube Container neu gefunden:`, ytContainer);
+                            
+                            if (!ytContainer) {
+                                console.error(`[Spotlight] Container ${containerId} nicht im DOM gefunden!`);
+                                return;
+                            }
+                            
+                            const wrapper = ytContainer.closest('.video-backdrop-wrapper');
+                            console.log(`[Spotlight] Wrapper gefunden:`, wrapper);
+                            
+                            let currentPlaceholder = null;
+                            if (wrapper) {
+                                currentPlaceholder = wrapper.querySelector('.video-placeholder');
+                                console.log(`[Spotlight] Placeholder in wrapper gefunden:`, currentPlaceholder);
+                            }
+                            
+                            if (!currentPlaceholder) {
+                                console.warn(`[Spotlight] KEIN Placeholder gefunden für ${item.Name}!`);
+                                ytContainer.classList.add('video-ready');
+                                return;
+                            }
+                            
+                            if (!currentPlaceholder.classList.contains('hidden')) {
+                                console.log(`[Spotlight] Blende Placeholder aus für: ${item.Name}`);
+                                setTimeout(() => {
+                                    ytContainer.classList.add('video-ready');
+                                    setTimeout(() => {
+                                        currentPlaceholder.classList.add('hidden');
+                                        console.log(`[Spotlight] Placeholder ausgeblendet!`);
+                                    }, 300);
+                                }, 500);
+                            } else {
+                                console.log(`[Spotlight] Placeholder bereits versteckt`);
+                                ytContainer.classList.add('video-ready');
+                            }
+                        } else if (playerState === YT.PlayerState.PAUSED) {
+                            console.log(`[Spotlight] Video pausiert`);
+                            STATE.isPaused = true;
+                            updatePauseButtonIcon();
+                            stopSponsorBlockMonitoring(item.Id);
+                        } else if (playerState === YT.PlayerState.ENDED) {
+                            console.log(`[Spotlight] YouTube Trailer beendet: ${item.Name}`);
+                            STATE.isPaused = false;
+                            stopSponsorBlockMonitoring(item.Id);
+                            if (CONFIG.waitForTrailerToEnd) {
+                                setTimeout(() => {
+                                    const rightArrow = document.querySelector('.spotlight .arrow.right');
+                                    if (rightArrow) {
+                                        console.log('[Spotlight] Auto-Advance nach Trailer-Ende');
+                                        rightArrow.click();
+                                    }
+                                }, 500);
+                            }
+                        } else if (playerState === YT.PlayerState.BUFFERING) {
+                            console.log(`[Spotlight] Video buffert...`);
+                        }
+                    }
                 }
             });
         }, 100);
@@ -2900,16 +3109,16 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         }, 100);
     }
 
-	function logYouTubeURL(videoId, itemName) {
-		if (videoId) {
-			const youtubeURL = `https://www.youtube.com/watch?v=${videoId}`;
-			console.log(`%c[Spotlight] Current Trailer:`, 'color: #00ff00; font-weight: bold');
-			console.log(`%c[Spotlight] Item: ${itemName || 'Unbekannt'}`, 'color: #00aaff');
-			console.log(`%c[Spotlight] URL: ${youtubeURL}`, 'color: #ffaa00; font-weight: bold');
-			console.log(`%c[Spotlight] Video-ID: ${videoId}`, 'color: #ff00ff');
-			console.log('─'.repeat(80));
-		}
-	}
+    function logYouTubeURL(videoId, itemName) {
+        if (videoId) {
+            const youtubeURL = `https://www.youtube.com/watch?v=${videoId}`;
+            console.log(`%c[Spotlight] Current Trailer:`, 'color: #00ff00; font-weight: bold');
+            console.log(`%c[Spotlight] Item: ${itemName || 'Unbekannt'}`, 'color: #00aaff');
+            console.log(`%c[Spotlight] URL: ${youtubeURL}`, 'color: #ffaa00; font-weight: bold');
+            console.log(`%c[Spotlight] Video-ID: ${videoId}`, 'color: #ff00ff');
+            console.log('─'.repeat(80));
+        }
+    }
     
     function playCurrentSlideVideo(itemId) {
         let player = STATE.videoPlayers[itemId];
@@ -2947,16 +3156,16 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             }
         }
         
-		if (player.playVideo && typeof player.playVideo === 'function') {
-			console.log(`[Spotlight] Starte YouTube Video: ${itemId}`);
-			
-			const currentSlide = STATE.currentSlider?.children[STATE.currentSlideIndex];
-			const itemName = currentSlide?.querySelector('.banner-title')?.textContent || 
-							 currentSlide?.querySelector('.banner-logo')?.alt || 
-							 'Unbekannt';
-			const videoId = player._videoId;
-			logYouTubeURL(videoId, itemName);
-			
+        if (player.playVideo && typeof player.playVideo === 'function') {
+            console.log(`[Spotlight] Starte YouTube Video: ${itemId}`);
+            
+            const currentSlide = STATE.currentSlider?.children[STATE.currentSlideIndex];
+            const itemName = currentSlide?.querySelector('.banner-title')?.textContent || 
+                             currentSlide?.querySelector('.banner-logo')?.alt || 
+                             'Unbekannt';
+            const videoId = player._videoId;
+            logYouTubeURL(videoId, itemName);
+            
             if (STATE.isMuted) {
                 player.mute();
             } else {
@@ -3042,159 +3251,159 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         });
     }
     
-	function initializeYouTubePlayers(slider) {
-		const pendingPlayers = slider.querySelectorAll('.youtube-backdrop[data-video-id]');
-		
-		pendingPlayers.forEach(container => {
-			const itemId = container.dataset.itemId;
-			const videoId = container.dataset.videoId;
-			const playerId = container.id;
-			const isClone = container.dataset.isClone === 'true';
-			
-			if (!videoId || !playerId) {
-				return;
-			}
-			
-			if (!isClone && STATE.videoPlayers[itemId]) {
-				return; 
-			}
-			
-			console.log(`[Spotlight] Creating YouTube Player for ${playerId} (Clone: ${isClone})`);
-			
-			const placeholder = container.parentElement?.querySelector('.video-placeholder');
-			
-			const playerVars = {
-				autoplay: 0,
-				mute: 1,
-				controls: 0,
-				disablekb: 1,
-				fs: 0,
-				iv_load_policy: 3,
-				rel: 0,
-				loop: 0,
-				modestbranding: 1,
-				playsinline: 1,
-				suggestedQuality: CONFIG.preferredVideoQuality
-			};
-			
-			const player = new YT.Player(playerId, {
-				height: '100%',
-				width: '100%',
-				videoId: videoId,
-				playerVars: playerVars,
-				events: {
-					'onReady': (event) => {
-						event.target._videoId = videoId;
-						event.target._itemId = itemId;
-						event.target._playerId = playerId;
-						event.target.mute();
-						
-						if (isClone) {
-							STATE.videoPlayers[playerId] = event.target;
-						} else {
-							STATE.videoPlayers[itemId] = event.target;
-						}
-						
-						STATE.videoReadyStates[itemId] = false;
-						
-						console.log(`[Spotlight] YouTube Player ready: ${playerId}`);
-						
-						const bannerItem = container.closest('.banner-item');
-						const slider = container.closest('.banner-slider');
-						if (slider) {
-							const firstSlide = slider.children[1];
-							if (bannerItem === firstSlide) {
-								setTimeout(() => {
-									playCurrentSlideVideo(itemId);
-								}, 500);
-							}
-						}
-					},
-					'onStateChange': (event) => {
-						const playerState = event.data;
-						
-						if (playerState === YT.PlayerState.PLAYING) {
-							console.log(`[Spotlight] Video spielt: ${itemId}`);
-							STATE.isPaused = false;
-							updatePauseButtonIcon();
-							startSponsorBlockMonitoring(event.target, videoId, itemId);
-							
-							const ytContainer = document.getElementById(playerId);
-							console.log(`[Spotlight] YouTube Container neu gefunden:`, ytContainer);
-							
-							if (!ytContainer) {
-								console.error(`[Spotlight] Container ${playerId} nicht im DOM gefunden!`);
-								return;
-							}
-							
-							const wrapper = ytContainer.closest('.video-backdrop-wrapper');
-							console.log(`[Spotlight] Wrapper gefunden:`, wrapper);
-							
-							let currentPlaceholder = null;
-							if (wrapper) {
-								currentPlaceholder = wrapper.querySelector('.video-placeholder');
-								console.log(`[Spotlight] Placeholder in wrapper gefunden:`, currentPlaceholder);
-							}
-							
-							if (!currentPlaceholder) {
-								console.warn(`[Spotlight] KEIN Placeholder gefunden für ${itemId}!`);
-								ytContainer.classList.add('video-ready');
-								return;
-							}
-							
-							if (!currentPlaceholder.classList.contains('hidden')) {
-								console.log(`[Spotlight] Blende Placeholder aus für: ${itemId}`);
-								setTimeout(() => {
-									ytContainer.classList.add('video-ready');
-									setTimeout(() => {
-										currentPlaceholder.classList.add('hidden');
-										console.log(`[Spotlight] Placeholder ausgeblendet!`);
-									}, 300);
-								}, 500);
-							} else {
-								console.log(`[Spotlight] Placeholder bereits versteckt`);
-								ytContainer.classList.add('video-ready');
-							}
-						} 
-						else if (playerState === YT.PlayerState.BUFFERING) {
-							console.log(`[Spotlight] Video buffert: ${itemId}`);
-						}
-						else if (playerState === YT.PlayerState.ENDED) {
-							console.log(`[Spotlight] Video beendet: ${itemId}`);
-							stopSponsorBlockMonitoring(itemId);
-							
-							const ytContainer = document.getElementById(playerId);
-							const wrapper = ytContainer?.closest('.video-backdrop-wrapper');
-							const currentPlaceholder = wrapper?.querySelector('.video-placeholder');
-							
-							if (currentPlaceholder) {
-								currentPlaceholder.classList.remove('hidden');
-							}
-							if (ytContainer) {
-								ytContainer.classList.remove('video-ready');
-							}
-							
-							if (CONFIG.waitForTrailerToEnd) {
-								setTimeout(() => {
-									const rightArrow = document.querySelector('.spotlight .arrow.right');
-									if (rightArrow) {
-										console.log('[Spotlight] Auto-Advance nach Video-Ende');
-										rightArrow.click();
-									}
-								}, 500);
-							}
-						} 
-						else if (playerState === YT.PlayerState.PAUSED) {
-							console.log(`[Spotlight] Video pausiert: ${itemId}`);
-							STATE.isPaused = true;
-							updatePauseButtonIcon();
-							stopSponsorBlockMonitoring(itemId);
-						}
-					}
-				}
-			});
-		});
-	}
+    function initializeYouTubePlayers(slider) {
+        const pendingPlayers = slider.querySelectorAll('.youtube-backdrop[data-video-id]');
+        
+        pendingPlayers.forEach(container => {
+            const itemId = container.dataset.itemId;
+            const videoId = container.dataset.videoId;
+            const playerId = container.id;
+            const isClone = container.dataset.isClone === 'true';
+            
+            if (!videoId || !playerId) {
+                return;
+            }
+            
+            if (!isClone && STATE.videoPlayers[itemId]) {
+                return; 
+            }
+            
+            console.log(`[Spotlight] Creating YouTube Player for ${playerId} (Clone: ${isClone})`);
+            
+            const placeholder = container.parentElement?.querySelector('.video-placeholder');
+            
+            const playerVars = {
+                autoplay: 0,
+                mute: 1,
+                controls: 0,
+                disablekb: 1,
+                fs: 0,
+                iv_load_policy: 3,
+                rel: 0,
+                loop: 0,
+                modestbranding: 1,
+                playsinline: 1,
+                suggestedQuality: CONFIG.preferredVideoQuality
+            };
+            
+            const player = new YT.Player(playerId, {
+                height: '100%',
+                width: '100%',
+                videoId: videoId,
+                playerVars: playerVars,
+                events: {
+                    'onReady': (event) => {
+                        event.target._videoId = videoId;
+                        event.target._itemId = itemId;
+                        event.target._playerId = playerId;
+                        event.target.mute();
+                        
+                        if (isClone) {
+                            STATE.videoPlayers[playerId] = event.target;
+                        } else {
+                            STATE.videoPlayers[itemId] = event.target;
+                        }
+                        
+                        STATE.videoReadyStates[itemId] = false;
+                        
+                        console.log(`[Spotlight] YouTube Player ready: ${playerId}`);
+                        
+                        const bannerItem = container.closest('.banner-item');
+                        const slider = container.closest('.banner-slider');
+                        if (slider) {
+                            const firstSlide = slider.children[1];
+                            if (bannerItem === firstSlide) {
+                                setTimeout(() => {
+                                    playCurrentSlideVideo(itemId);
+                                }, 500);
+                            }
+                        }
+                    },
+                    'onStateChange': (event) => {
+                        const playerState = event.data;
+                        
+                        if (playerState === YT.PlayerState.PLAYING) {
+                            console.log(`[Spotlight] Video spielt: ${itemId}`);
+                            STATE.isPaused = false;
+                            updatePauseButtonIcon();
+                            startSponsorBlockMonitoring(event.target, videoId, itemId);
+                            
+                            const ytContainer = document.getElementById(playerId);
+                            console.log(`[Spotlight] YouTube Container neu gefunden:`, ytContainer);
+                            
+                            if (!ytContainer) {
+                                console.error(`[Spotlight] Container ${playerId} nicht im DOM gefunden!`);
+                                return;
+                            }
+                            
+                            const wrapper = ytContainer.closest('.video-backdrop-wrapper');
+                            console.log(`[Spotlight] Wrapper gefunden:`, wrapper);
+                            
+                            let currentPlaceholder = null;
+                            if (wrapper) {
+                                currentPlaceholder = wrapper.querySelector('.video-placeholder');
+                                console.log(`[Spotlight] Placeholder in wrapper gefunden:`, currentPlaceholder);
+                            }
+                            
+                            if (!currentPlaceholder) {
+                                console.warn(`[Spotlight] KEIN Placeholder gefunden für ${itemId}!`);
+                                ytContainer.classList.add('video-ready');
+                                return;
+                            }
+                            
+                            if (!currentPlaceholder.classList.contains('hidden')) {
+                                console.log(`[Spotlight] Blende Placeholder aus für: ${itemId}`);
+                                setTimeout(() => {
+                                    ytContainer.classList.add('video-ready');
+                                    setTimeout(() => {
+                                        currentPlaceholder.classList.add('hidden');
+                                        console.log(`[Spotlight] Placeholder ausgeblendet!`);
+                                    }, 300);
+                                }, 500);
+                            } else {
+                                console.log(`[Spotlight] Placeholder bereits versteckt`);
+                                ytContainer.classList.add('video-ready');
+                            }
+                        } 
+                        else if (playerState === YT.PlayerState.BUFFERING) {
+                            console.log(`[Spotlight] Video buffert: ${itemId}`);
+                        }
+                        else if (playerState === YT.PlayerState.ENDED) {
+                            console.log(`[Spotlight] Video beendet: ${itemId}`);
+                            stopSponsorBlockMonitoring(itemId);
+                            
+                            const ytContainer = document.getElementById(playerId);
+                            const wrapper = ytContainer?.closest('.video-backdrop-wrapper');
+                            const currentPlaceholder = wrapper?.querySelector('.video-placeholder');
+                            
+                            if (currentPlaceholder) {
+                                currentPlaceholder.classList.remove('hidden');
+                            }
+                            if (ytContainer) {
+                                ytContainer.classList.remove('video-ready');
+                            }
+                            
+                            if (CONFIG.waitForTrailerToEnd) {
+                                setTimeout(() => {
+                                    const rightArrow = document.querySelector('.spotlight .arrow.right');
+                                    if (rightArrow) {
+                                        console.log('[Spotlight] Auto-Advance nach Video-Ende');
+                                        rightArrow.click();
+                                    }
+                                }, 500);
+                            }
+                        } 
+                        else if (playerState === YT.PlayerState.PAUSED) {
+                            console.log(`[Spotlight] Video pausiert: ${itemId}`);
+                            STATE.isPaused = true;
+                            updatePauseButtonIcon();
+                            stopSponsorBlockMonitoring(itemId);
+                        }
+                    }
+                }
+            });
+        });
+    }
     
     function ensurePlayerForCurrentSlide(currentIndex, slider) {
         const currentSlide = slider.children[currentIndex];
@@ -3343,41 +3552,41 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             updateVideoButtonsVisibility();
             STATE.currentSlideIndex = currentIndex;
             
-		const firstItem = slider.children[currentIndex];
-		if (firstItem && firstItem.dataset.hasVideo === 'true') {
-			const itemId = firstItem.dataset.itemId;
-			if (itemId) {
-				const tryPlay = (attempts = 0) => {
-					const player = STATE.videoPlayers[itemId];
-					
-					if (!player && attempts < 40) {
-						console.log(`[Spotlight] Warte auf Player... ${attempts + 1}/40`);
-						setTimeout(() => tryPlay(attempts + 1), 300);
-						return;
-					}
-					
-					if (player && typeof player.getPlayerState === 'function') {
-						const state = player.getPlayerState();
-						
-						if (state === YT.PlayerState.UNSTARTED || state === YT.PlayerState.CUED) {
-							console.log('[Spotlight] Player vollständig bereit, starte erstes Video');
-							
-							setTimeout(() => {
-								playCurrentSlideVideo(itemId);
-							}, 800);
-						} else if (state === -1 && attempts < 40) {
-							setTimeout(() => tryPlay(attempts + 1), 300);
-						} else if (state !== -1) {
-							playCurrentSlideVideo(itemId);
-						}
-					} else if (player && player.tagName === 'VIDEO') {
-						playCurrentSlideVideo(itemId);
-					}
-				};
-				
-				setTimeout(() => tryPlay(), 2000);
-			}
-		}
+            const firstItem = slider.children[currentIndex];
+            if (firstItem && firstItem.dataset.hasVideo === 'true') {
+                const itemId = firstItem.dataset.itemId;
+                if (itemId) {
+                    const tryPlay = (attempts = 0) => {
+                        const player = STATE.videoPlayers[itemId];
+                        
+                        if (!player && attempts < 40) {
+                            console.log(`[Spotlight] Warte auf Player... ${attempts + 1}/40`);
+                            setTimeout(() => tryPlay(attempts + 1), 300);
+                            return;
+                        }
+                        
+                        if (player && typeof player.getPlayerState === 'function') {
+                            const state = player.getPlayerState();
+                            
+                            if (state === YT.PlayerState.UNSTARTED || state === YT.PlayerState.CUED) {
+                                console.log('[Spotlight] Player vollständig bereit, starte erstes Video');
+                                
+                                setTimeout(() => {
+                                    playCurrentSlideVideo(itemId);
+                                }, 800);
+                            } else if (state === -1 && attempts < 40) {
+                                setTimeout(() => tryPlay(attempts + 1), 300);
+                            } else if (state !== -1) {
+                                playCurrentSlideVideo(itemId);
+                            }
+                        } else if (player && player.tagName === 'VIDEO') {
+                            playCurrentSlideVideo(itemId);
+                        }
+                    };
+                    
+                    setTimeout(() => tryPlay(), 2000);
+                }
+            }
         }, 100);
         
         btnRight.addEventListener("click", (e) => {
