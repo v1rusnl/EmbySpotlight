@@ -1,10 +1,10 @@
 /*!
  * Spotlight.js — Emby 4.9 compatible Spotlight slider with Video Backdrop Support & Custom Ratings
- * Enhanced with: YouTube Trailers, HTML5 Video, SponsorBlock, Custom Ratings (IMDb, RT, Metacritic, etc.)
+ * Enhanced with: YouTube Trailers, HTML5 Video, SponsorBlock, Custom Ratings (IMDb, RT, Metacritic, etc.), Oscar Wins+Nominations
  * localStorage-based caching for all ratings
  * RT Scraping for Certified Fresh & Verified Hot badges
  * RT Direct Scraping fallback when MDBList has no RT data
- * Generated: 2026-02-09
+ * Generated: 2026-02-10
  *
  * CORS PROXY (optional):
  * - Without: Most ratings work via MDBList API
@@ -48,7 +48,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         vignetteColorBottom: "#1e1e1e",
         vignetteColorLeft:   "#1e1e1e",
         vignetteColorRight:  "#1e1e1e",
-        playbuttonColor: "var(--theme-primary-color)",
+        playbuttonColor: "hsl(var(--theme-primary-color-hue), var(--theme-primary-color-saturation), var(--theme-primary-color-lightness))",
         customItemsFile: "spotlight-items.txt",
         
         enableVideoBackdrop: true,
@@ -58,14 +58,14 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         enableMobileVideo: false,
         preferredVideoQuality: "hd720",
         
-        enableSponsorBlock: true, //Sponsorblock extension needs to be installed on the client
+        enableSponsorBlock: true, // Sponsorblock extension needs to be installed on the client
         sponsorBlockCategories: ["sponsor", "intro", "outro", "selfpromo", "interaction", "preview"],
         
         // Custom Ratings Config
         enableCustomRatings: true,
-        MDBLIST_API_KEY: 'YOUR_API_KEY',
-        TMDB_API_KEY: 'YOUR_API_KEY',
-        KINOPOISK_API_KEY: 'YOUR_API_KEY',
+        MDBLIST_API_KEY: '', // API Key from https://mdblist.com/
+        TMDB_API_KEY: '', // API Key from https://www.themoviedb.org/
+        KINOPOISK_API_KEY: '', // API key from https://kinopoiskapiunofficial.tech/
         CACHE_TTL_HOURS: 168, // Cache duration in Hours
         
         // CORS Proxy URL für RT und Allociné Scraping (leer lassen wenn nicht verfügbar)
@@ -194,7 +194,8 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         kinopoisk: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/kinopoisk.png',
         rogerebert: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/Roger_Ebert.png',
         allocine_critics: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/allocine_crit.png',
-        allocine_audience: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/allocine_user.png'
+        allocine_audience: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/allocine_user.png',
+		academy: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/academyaw.png'
     };
     
     // ══════════════════════════════════════════════════════════════════
@@ -1208,7 +1209,152 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             });
         });
     }
-    
+
+	// ══════════════════════════════════════════════════════════════════
+	// Academy Awards (via Wikidata SPARQL)
+	// ══════════════════════════════════════════════════════════════════
+
+	function fetchAcademyAwards(imdbId) {
+		return new Promise((resolve) => {
+			if (!imdbId) {
+				resolve(null);
+				return;
+			}
+
+			const cacheKey = `academy_awards_${imdbId}`;
+			const cached = RatingsCache.get(cacheKey);
+			if (cached !== null) {
+				if (cached.count > 0 || cached.nominations > 0) {
+					resolve(cached);
+				} else {
+					resolve(null);
+				}
+				return;
+			}
+
+			const sparql = `
+				SELECT (COUNT(DISTINCT ?award) AS ?wins) (COUNT(DISTINCT ?nomination) AS ?noms) WHERE {
+					?item wdt:P345 "${imdbId}" .
+					
+					OPTIONAL {
+						?item p:P166 ?awardStatement .
+						?awardStatement ps:P166 ?award .
+						?award wdt:P31*/wdt:P279* wd:Q19020 .
+						FILTER NOT EXISTS { ?awardStatement pq:P1552 wd:Q4356445 . }
+					}
+					
+					OPTIONAL {
+						?item p:P1411 ?nomStatement .
+						?nomStatement ps:P1411 ?nomination .
+						?nomination wdt:P31*/wdt:P279* wd:Q19020 .
+					}
+				}`;
+
+			GM_xmlhttpRequest({
+				method: 'GET',
+				url: 'https://query.wikidata.org/sparql?format=json&query=' + encodeURIComponent(sparql),
+				headers: {
+					'Accept': 'application/sparql-results+json',
+					'User-Agent': 'EmbySpotlightScript/1.0'
+				},
+				onload(res) {
+					if (res.status !== 200) {
+						console.warn('[Spotlight] Wikidata Academy Awards query failed:', res.status);
+						RatingsCache.set(cacheKey, { count: 0, nominations: 0 });
+						resolve(null);
+						return;
+					}
+
+					let json;
+					try {
+						json = JSON.parse(res.responseText);
+					} catch (e) {
+						console.error('[Spotlight] Academy Awards JSON parse error:', e);
+						RatingsCache.set(cacheKey, { count: 0, nominations: 0 });
+						resolve(null);
+						return;
+					}
+
+					const bindings = json.results?.bindings;
+					if (!bindings || bindings.length === 0) {
+						RatingsCache.set(cacheKey, { count: 0, nominations: 0 });
+						resolve(null);
+						return;
+					}
+
+					const wins = parseInt(bindings[0].wins?.value || '0', 10);
+					const nominations = parseInt(bindings[0].noms?.value || '0', 10);
+
+					const result = { count: wins, nominations: nominations };
+					RatingsCache.set(cacheKey, result);
+
+					if (wins > 0 || nominations > 0) {
+						resolve(result);
+					} else {
+						resolve(null);
+					}
+				},
+				onerror(err) {
+					console.error('[Spotlight] Academy Awards request error:', err);
+					RatingsCache.set(cacheKey, { count: 0, nominations: 0 });
+					resolve(null);
+				}
+			});
+		});
+	}
+
+	function createAcademyAwardsBadge(wins, nominations) {
+		const oscarContainer = document.createElement('div');
+		oscarContainer.className = 'banner-oscars';
+		
+		// Separator-Punkt VOR dem Oscar-Logo (wie zwischen Genres)
+		const leadingSeparator = document.createElement('span');
+		leadingSeparator.className = 'banner-oscar-text banner-oscar-leading-separator';
+		leadingSeparator.textContent = '•';
+		oscarContainer.appendChild(leadingSeparator);
+		
+		// Oscar Logo
+		const img = document.createElement('img');
+		img.src = LOGO.academy;
+		img.alt = 'Academy Awards';
+		img.className = 'banner-oscar-logo';
+		
+		let titleText = 'Academy Awards:';
+		if (wins > 0) titleText += ` ${wins} gewonnen`;
+		if (wins > 0 && nominations > 0) titleText += ',';
+		if (nominations > 0) titleText += ` ${nominations} nominiert`;
+		img.title = titleText;
+		
+		oscarContainer.appendChild(img);
+
+		// Wins (falls vorhanden)
+		if (wins > 0) {
+			const winsSpan = document.createElement('span');
+			winsSpan.className = 'banner-oscar-text banner-oscar-wins';
+			winsSpan.textContent = `${wins} Win${wins !== 1 ? 's' : ''}`;
+			oscarContainer.appendChild(winsSpan);
+		}
+
+		// Separator (nur wenn beide vorhanden)
+		if (wins > 0 && nominations > 0) {
+			const dotSpan = document.createElement('span');
+			dotSpan.className = 'banner-oscar-text banner-oscar-separator';
+			dotSpan.textContent = '';
+			oscarContainer.appendChild(dotSpan);
+		}
+
+		// Nominations (falls vorhanden)
+		if (nominations > 0) {
+			const nomsSpan = document.createElement('span');
+			nomsSpan.className = 'banner-oscar-text banner-oscar-noms';
+			nomsSpan.textContent = `${nominations} Nomination${nominations !== 1 ? 's' : ''}`;
+			oscarContainer.appendChild(nomsSpan);
+		}
+
+		return oscarContainer;
+	}
+
+   
     // ══════════════════════════════════════════════════════════════════
     // SponsorBlock
     // ══════════════════════════════════════════════════════════════════
@@ -1692,7 +1838,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             align-items: flex-start;
             gap: 0.5rem;
             pointer-events: none;
-            max-width: 60%;
+            max-width: 80%;
         }
         
         .spotlight .banner-genres {
@@ -1786,7 +1932,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         
         .spotlight .play-button-overlay {
             position: absolute;
-            top: 4rem;
+            top: 5rem;
             right: 1.5rem;
             z-index: 25;
             opacity: 0;
@@ -1798,6 +1944,53 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             opacity: 1;
             pointer-events: all;
         }
+
+		.spotlight .banner-genres-row {
+			display: flex;
+			align-items: center;
+			gap: 1.5rem;
+			flex-wrap: wrap;
+		}
+
+		.spotlight .banner-oscars {
+			display: flex;
+			align-items: center;
+			gap: 0.4rem;
+		}
+		
+		.banner-oscar-text.banner-oscar-leading-separator {
+			color: rgba(255, 255, 255, 0.5);
+		}
+
+		.spotlight .banner-oscar-logo {
+			height: clamp(1.1rem, 1.8vw, 1.4rem);
+			width: auto;
+			object-fit: contain;
+			filter: drop-shadow(0 2px 4px rgba(0,0,0,0.8));
+			margin-bottom: 5px;
+			margin-right: 12px;
+			margin-left: 9px;
+		}
+
+		.spotlight .banner-oscar-text {
+			font-size: clamp(1.1rem, 1.8vw, 1.4rem);
+			font-weight: 500;
+			text-shadow: 1px 1px 4px rgba(0,0,0,0.9);
+			margin-left: -8px;
+		}
+
+		.spotlight .banner-oscar-wins {
+			color: #d4af37;
+		}
+
+		.spotlight .banner-oscar-separator {
+			color: #fff;
+			margin: 0 0.3rem;
+		}
+
+		.spotlight .banner-oscar-noms {
+			color: rgba(255,255,255,0.7);
+		}
         
         .spotlight .play-button {
             width: 80px;
@@ -1836,7 +2029,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         
         .spotlight .pause-button {
             position: absolute;
-            bottom: 7rem;
+            bottom: 8rem;
             right: 2rem;
             z-index: 25;
             width: 50px;
@@ -1879,7 +2072,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         
         .spotlight .mute-button {
             position: absolute;
-            bottom: 3rem;
+            bottom: 4rem;
             right: 2rem;
             z-index: 25;
             width: 50px;
@@ -1921,7 +2114,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         }
         .spotlight .refresh-button {
             position: absolute;
-            bottom: 11rem;
+            bottom: 12rem;
             right: 2rem;
             z-index: 25;
             width: 50px;
@@ -2006,7 +2199,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         .spotlight .controls { 
             position: absolute; 
             right: 2rem; 
-            bottom: 1.5rem; 
+            bottom: 2.3rem; 
             z-index: 20; 
             display: flex; 
             gap: .5rem; 
@@ -2246,332 +2439,346 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         return fetchStandardItems(apiClient);
     }
     
-    async function createInfoElement(item) {
-        const infoContainer = document.createElement("div");
-        infoContainer.className = "banner-info";
-        
-        if (item.Genres && item.Genres.length > 0) {
-            const genresDiv = document.createElement("div");
-            genresDiv.className = "banner-genres";
-            const genresToShow = item.Genres.slice(0, 3);
-            genresToShow.forEach(genre => {
-                const genreSpan = document.createElement("span");
-                genreSpan.className = "banner-genre";
-                genreSpan.textContent = genre;
-                genresDiv.appendChild(genreSpan);
-            });
-            infoContainer.appendChild(genresDiv);
-        }
-        
-        const metaDiv = document.createElement("div");
-        metaDiv.className = "banner-meta";
-        
-        if (item.ProductionYear) {
-            const yearSpan = document.createElement("span");
-            yearSpan.className = "banner-meta-item";
-            yearSpan.textContent = item.ProductionYear;
-            metaDiv.appendChild(yearSpan);
-        }
-        
-        if (item.RunTimeTicks) {
-            const runtimeMinutes = Math.round(item.RunTimeTicks / 600000000);
-            const runtimeSpan = document.createElement("span");
-            runtimeSpan.className = "banner-meta-item";
-            runtimeSpan.textContent = formatRuntime(runtimeMinutes);
-            metaDiv.appendChild(runtimeSpan);
-        }
-        
-        if (CONFIG.enableCustomRatings) {
-            const tmdbId = getTmdbId(item);
-            const imdbId = getImdbId(item);
-            const type = item.Type === 'Series' ? 'show' : 'movie';
-            
-            if (tmdbId) {
-                fetchMDBListRatings(type, tmdbId, item).then(async (ratingsData) => {
-                    if (!ratingsData) return;
-                    
-                    const hasRTFromMDBList = ratingsData._hasRTFromMDBList;
-                    
-                    // Render all rating badges from MDBList
-                    ratingsData.ratings.forEach(rating => {
-                        const ratingItem = document.createElement("div");
-                        ratingItem.className = "custom-rating-item";
-                        
-                        const img = document.createElement("img");
-                        img.src = rating.logo;
-                        img.alt = rating.source;
-                        img.className = "custom-rating-logo";
-                        img.title = `${rating.source}: ${rating.value}${rating.votes ? ` (${rating.votes} votes)` : ''}`;
-                        img.dataset.source = rating.key;
-                        img.dataset.ratingType = rating._isCritics ? 'critics' : (rating._isAudience ? 'audience' : '');
-                        
-                        const value = document.createElement("span");
-                        value.className = "custom-rating-value";
-                        value.textContent = rating.value;
-                        
-                        ratingItem.appendChild(img);
-                        ratingItem.appendChild(value);
-                        metaDiv.appendChild(ratingItem);
-                    });
-                    
-                    // ══════════════════════════════════════════════════════════════════
-                    // RT FALLBACK: If MDBList has no RT data, scrape directly from RT
-                    // ══════════════════════════════════════════════════════════════════
-                    if (!hasRTFromMDBList && imdbId) {
-                        console.log('[Spotlight] MDBList hat keine RT-Daten für', item.Name, '- scrape direkt von RT');
-                        const rtDirect = await fetchRottenTomatoesDirectly(imdbId, type);
-                        
-                        if (rtDirect) {
-                            // Render Critics Score from direct scrape
-                            if (rtDirect.criticsScore !== null) {
-                                const criticsLogo = rtDirect.criticsScore < 60 ? 'tomatoes_rotten' :
-                                                   (rtDirect.criticsCertified ? 'tomatoes_certified' : 'tomatoes');
-                                
-                                const ratingItem = document.createElement("div");
-                                ratingItem.className = "custom-rating-item";
-                                
-                                const img = document.createElement("img");
-                                img.src = LOGO[criticsLogo];
-                                img.alt = "Rotten Tomatoes";
-                                img.className = "custom-rating-logo";
-                                img.title = `Rotten Tomatoes: ${rtDirect.criticsScore}%`;
-                                img.dataset.source = criticsLogo;
-                                
-                                const value = document.createElement("span");
-                                value.className = "custom-rating-value";
-                                value.textContent = rtDirect.criticsScore;
-                                
-                                ratingItem.appendChild(img);
-                                ratingItem.appendChild(value);
-                                metaDiv.appendChild(ratingItem);
-                            }
-                            
-                            // Render Audience Score from direct scrape
-                            if (rtDirect.audienceScore !== null) {
-                                const audienceLogo = rtDirect.audienceScore < 60 ? 'audience_rotten' :
-                                                    (rtDirect.audienceCertified ? 'rotten_ver' : 'audience');
-                                
-                                const ratingItem = document.createElement("div");
-                                ratingItem.className = "custom-rating-item";
-                                
-                                const img = document.createElement("img");
-                                img.src = LOGO[audienceLogo];
-                                img.alt = "RT Audience";
-                                img.className = "custom-rating-logo";
-                                img.title = `RT Audience: ${rtDirect.audienceScore}%`;
-                                img.dataset.source = audienceLogo;
-                                
-                                const value = document.createElement("span");
-                                value.className = "custom-rating-value";
-                                value.textContent = rtDirect.audienceScore;
-                                
-                                ratingItem.appendChild(img);
-                                ratingItem.appendChild(value);
-                                metaDiv.appendChild(ratingItem);
-                            }
-                        }
-                    }
-                    // ══════════════════════════════════════════════════════════════════
-                    // RT UPGRADE: If MDBList has RT data, check for Certified/Verified
-                    // ══════════════════════════════════════════════════════════════════
-                    else if (hasRTFromMDBList && imdbId) {
-                        const tomatoesScore = ratingsData._tomatoesScore;
-                        const audienceScore = ratingsData._audienceScore;
-                        
-                        if (tomatoesScore >= 60 || audienceScore >= 60) {
-                            fetchRTCertifiedStatus(imdbId, type).then(rtStatus => {
-                                // Find the critics and audience badge img elements
-                                const allLogos = metaDiv.querySelectorAll('.custom-rating-logo');
-                                
-                                allLogos.forEach(logoImg => {
-                                    const ratingType = logoImg.dataset.ratingType;
-                                    const currentSource = logoImg.dataset.source;
-                                    
-                                    // ── Update Critics badge ──
-                                    if (ratingType === 'critics' && tomatoesScore >= 60 && rtStatus.criticsCertified !== null) {
-                                        if (rtStatus.criticsCertified === true && currentSource !== 'tomatoes_certified') {
-                                            logoImg.src = LOGO.tomatoes_certified;
-                                            logoImg.dataset.source = 'tomatoes_certified';
-                                            console.log(`[Spotlight] Upgraded critics badge to Certified Fresh for ${item.Name}`);
-                                        } else if (rtStatus.criticsCertified === false && currentSource === 'tomatoes_certified') {
-                                            logoImg.src = LOGO.tomatoes;
-                                            logoImg.dataset.source = 'tomatoes';
-                                            console.log(`[Spotlight] Downgraded critics badge from Certified Fresh for ${item.Name}`);
-                                        }
-                                    }
-                                    
-                                    // ── Update Audience badge ──
-                                    if (ratingType === 'audience' && audienceScore >= 60 && rtStatus.audienceCertified !== null) {
-                                        if (rtStatus.audienceCertified === true && currentSource !== 'rotten_ver') {
-                                            logoImg.src = LOGO.rotten_ver;
-                                            logoImg.dataset.source = 'rotten_ver';
-                                            console.log(`[Spotlight] Upgraded audience badge to Verified Hot for ${item.Name}`);
-                                        } else if (rtStatus.audienceCertified === false && currentSource === 'rotten_ver') {
-                                            logoImg.src = LOGO.audience;
-                                            logoImg.dataset.source = 'audience';
-                                            console.log(`[Spotlight] Downgraded audience badge from Verified Hot for ${item.Name}`);
-                                        }
-                                    }
-                                });
-                                
-                                // Update the persistent cache with corrected badge keys
-                                const cacheKey = `mdblist_${type}_${tmdbId}`;
-                                const updatedRatings = ratingsData.ratings.map(r => {
-                                    if (r._isCritics && tomatoesScore >= 60 && rtStatus.criticsCertified !== null) {
-                                        if (rtStatus.criticsCertified === true) {
-                                            return { ...r, key: 'tomatoes_certified', logo: LOGO.tomatoes_certified };
-                                        } else if (rtStatus.criticsCertified === false && r.key === 'tomatoes_certified') {
-                                            return { ...r, key: 'tomatoes', logo: LOGO.tomatoes };
-                                        }
-                                    }
-                                    if (r._isAudience && audienceScore >= 60 && rtStatus.audienceCertified !== null) {
-                                        if (rtStatus.audienceCertified === true) {
-                                            return { ...r, key: 'rotten_ver', logo: LOGO.rotten_ver };
-                                        } else if (rtStatus.audienceCertified === false && r.key === 'rotten_ver') {
-                                            return { ...r, key: 'audience', logo: LOGO.audience };
-                                        }
-                                    }
-                                    return r;
-                                });
-                                
-                                const updatedResult = { ...ratingsData, ratings: updatedRatings };
-                                const memKey = `mdb_${type}_${tmdbId}`;
-                                STATE.ratingsCache[memKey] = updatedResult;
-                                RatingsCache.set(cacheKey, updatedResult);
-                            });
-                        }
-                    }
-                    
-                    // ── AniList ──
-                    if (imdbId) {
-                        const anilistRating = await fetchAniListRating(imdbId, ratingsData.originalTitle, ratingsData.year);
-                        if (anilistRating && anilistRating.score) {
-                            const ratingItem = document.createElement("div");
-                            ratingItem.className = "custom-rating-item";
-                            
-                            const img = document.createElement("img");
-                            img.src = LOGO.anilist;
-                            img.alt = "AniList";
-                            img.className = "custom-rating-logo";
-                            img.title = `AniList: ${anilistRating.score}`;
-                            
-                            const value = document.createElement("span");
-                            value.className = "custom-rating-value";
-                            value.textContent = anilistRating.score;
-                            
-                            ratingItem.appendChild(img);
-                            ratingItem.appendChild(value);
-                            metaDiv.appendChild(ratingItem);
-                        }
-                    }
+	async function createInfoElement(item) {
+		const infoContainer = document.createElement("div");
+		infoContainer.className = "banner-info";
+		
+		// Container für Genres + Oscars (in einer Zeile)
+		const genresRow = document.createElement("div");
+		genresRow.className = "banner-genres-row";
+		
+		// Genres
+		if (item.Genres && item.Genres.length > 0) {
+			const genresDiv = document.createElement("div");
+			genresDiv.className = "banner-genres";
+			const genresToShow = item.Genres.slice(0, 3);
+			genresToShow.forEach(genre => {
+				const genreSpan = document.createElement("span");
+				genreSpan.className = "banner-genre";
+				genreSpan.textContent = genre;
+				genresDiv.appendChild(genreSpan);
+			});
+			genresRow.appendChild(genresDiv);
+		}
+		
+		// Oscar-Platzhalter (wird async befüllt)
+		const oscarPlaceholder = document.createElement("div");
+		oscarPlaceholder.className = "banner-oscars-placeholder";
+		genresRow.appendChild(oscarPlaceholder);
+		
+		infoContainer.appendChild(genresRow);
+		
+		// Academy Awards async laden
+		const imdbId = getImdbId(item);
+		if (imdbId) {
+			fetchAcademyAwards(imdbId).then(oscarData => {
+				if (oscarData && (oscarData.count > 0 || oscarData.nominations > 0)) {
+					const oscarBadge = createAcademyAwardsBadge(oscarData.count, oscarData.nominations);
+					oscarPlaceholder.replaceWith(oscarBadge);
+					console.log(`[Spotlight] Academy Awards für ${item.Name}: ${oscarData.count} Wins, ${oscarData.nominations} Nominations`);
+				} else {
+					oscarPlaceholder.remove();
+				}
+			});
+		} else {
+			oscarPlaceholder.remove();
+		}
+		
+		const metaDiv = document.createElement("div");
+		metaDiv.className = "banner-meta";
+		
+		if (item.ProductionYear) {
+			const yearSpan = document.createElement("span");
+			yearSpan.className = "banner-meta-item";
+			yearSpan.textContent = item.ProductionYear;
+			metaDiv.appendChild(yearSpan);
+		}
+		
+		if (item.RunTimeTicks) {
+			const runtimeMinutes = Math.round(item.RunTimeTicks / 600000000);
+			const runtimeSpan = document.createElement("span");
+			runtimeSpan.className = "banner-meta-item";
+			runtimeSpan.textContent = formatRuntime(runtimeMinutes);
+			metaDiv.appendChild(runtimeSpan);
+		}
+		
+		if (CONFIG.enableCustomRatings) {
+			const tmdbId = getTmdbId(item);
+			const type = item.Type === 'Series' ? 'show' : 'movie';
+			
+			if (tmdbId) {
+				fetchMDBListRatings(type, tmdbId, item).then(async (ratingsData) => {
+					if (!ratingsData) return;
+					
+					const hasRTFromMDBList = ratingsData._hasRTFromMDBList;
+					
+					// Render all rating badges from MDBList
+					ratingsData.ratings.forEach(rating => {
+						const ratingItem = document.createElement("div");
+						ratingItem.className = "custom-rating-item";
+						
+						const img = document.createElement("img");
+						img.src = rating.logo;
+						img.alt = rating.source;
+						img.className = "custom-rating-logo";
+						img.title = `${rating.source}: ${rating.value}${rating.votes ? ` (${rating.votes} votes)` : ''}`;
+						img.dataset.source = rating.key;
+						img.dataset.ratingType = rating._isCritics ? 'critics' : (rating._isAudience ? 'audience' : '');
+						
+						const value = document.createElement("span");
+						value.className = "custom-rating-value";
+						value.textContent = rating.value;
+						
+						ratingItem.appendChild(img);
+						ratingItem.appendChild(value);
+						metaDiv.appendChild(ratingItem);
+					});
+					
+					// RT FALLBACK
+					if (!hasRTFromMDBList && imdbId) {
+						console.log('[Spotlight] MDBList hat keine RT-Daten für', item.Name, '- scrape direkt von RT');
+						const rtDirect = await fetchRottenTomatoesDirectly(imdbId, type);
+						
+						if (rtDirect) {
+							if (rtDirect.criticsScore !== null) {
+								const criticsLogo = rtDirect.criticsScore < 60 ? 'tomatoes_rotten' :
+												   (rtDirect.criticsCertified ? 'tomatoes_certified' : 'tomatoes');
+								
+								const ratingItem = document.createElement("div");
+								ratingItem.className = "custom-rating-item";
+								
+								const img = document.createElement("img");
+								img.src = LOGO[criticsLogo];
+								img.alt = "Rotten Tomatoes";
+								img.className = "custom-rating-logo";
+								img.title = `Rotten Tomatoes: ${rtDirect.criticsScore}%`;
+								img.dataset.source = criticsLogo;
+								
+								const value = document.createElement("span");
+								value.className = "custom-rating-value";
+								value.textContent = rtDirect.criticsScore;
+								
+								ratingItem.appendChild(img);
+								ratingItem.appendChild(value);
+								metaDiv.appendChild(ratingItem);
+							}
+							
+							if (rtDirect.audienceScore !== null) {
+								const audienceLogo = rtDirect.audienceScore < 60 ? 'audience_rotten' :
+													(rtDirect.audienceCertified ? 'rotten_ver' : 'audience');
+								
+								const ratingItem = document.createElement("div");
+								ratingItem.className = "custom-rating-item";
+								
+								const img = document.createElement("img");
+								img.src = LOGO[audienceLogo];
+								img.alt = "RT Audience";
+								img.className = "custom-rating-logo";
+								img.title = `RT Audience: ${rtDirect.audienceScore}%`;
+								img.dataset.source = audienceLogo;
+								
+								const value = document.createElement("span");
+								value.className = "custom-rating-value";
+								value.textContent = rtDirect.audienceScore;
+								
+								ratingItem.appendChild(img);
+								ratingItem.appendChild(value);
+								metaDiv.appendChild(ratingItem);
+							}
+						}
+					}
+					// RT UPGRADE
+					else if (hasRTFromMDBList && imdbId) {
+						const tomatoesScore = ratingsData._tomatoesScore;
+						const audienceScore = ratingsData._audienceScore;
+						
+						if (tomatoesScore >= 60 || audienceScore >= 60) {
+							fetchRTCertifiedStatus(imdbId, type).then(rtStatus => {
+								const allLogos = metaDiv.querySelectorAll('.custom-rating-logo');
+								
+								allLogos.forEach(logoImg => {
+									const ratingType = logoImg.dataset.ratingType;
+									const currentSource = logoImg.dataset.source;
+									
+									if (ratingType === 'critics' && tomatoesScore >= 60 && rtStatus.criticsCertified !== null) {
+										if (rtStatus.criticsCertified === true && currentSource !== 'tomatoes_certified') {
+											logoImg.src = LOGO.tomatoes_certified;
+											logoImg.dataset.source = 'tomatoes_certified';
+										} else if (rtStatus.criticsCertified === false && currentSource === 'tomatoes_certified') {
+											logoImg.src = LOGO.tomatoes;
+											logoImg.dataset.source = 'tomatoes';
+										}
+									}
+									
+									if (ratingType === 'audience' && audienceScore >= 60 && rtStatus.audienceCertified !== null) {
+										if (rtStatus.audienceCertified === true && currentSource !== 'rotten_ver') {
+											logoImg.src = LOGO.rotten_ver;
+											logoImg.dataset.source = 'rotten_ver';
+										} else if (rtStatus.audienceCertified === false && currentSource === 'rotten_ver') {
+											logoImg.src = LOGO.audience;
+											logoImg.dataset.source = 'audience';
+										}
+									}
+								});
+								
+								// Update cache
+								const cacheKey = `mdblist_${type}_${tmdbId}`;
+								const updatedRatings = ratingsData.ratings.map(r => {
+									if (r._isCritics && tomatoesScore >= 60 && rtStatus.criticsCertified !== null) {
+										if (rtStatus.criticsCertified === true) {
+											return { ...r, key: 'tomatoes_certified', logo: LOGO.tomatoes_certified };
+										} else if (rtStatus.criticsCertified === false && r.key === 'tomatoes_certified') {
+											return { ...r, key: 'tomatoes', logo: LOGO.tomatoes };
+										}
+									}
+									if (r._isAudience && audienceScore >= 60 && rtStatus.audienceCertified !== null) {
+										if (rtStatus.audienceCertified === true) {
+											return { ...r, key: 'rotten_ver', logo: LOGO.rotten_ver };
+										} else if (rtStatus.audienceCertified === false && r.key === 'rotten_ver') {
+											return { ...r, key: 'audience', logo: LOGO.audience };
+										}
+									}
+									return r;
+								});
+								
+								const updatedResult = { ...ratingsData, ratings: updatedRatings };
+								const memKey = `mdb_${type}_${tmdbId}`;
+								STATE.ratingsCache[memKey] = updatedResult;
+								RatingsCache.set(cacheKey, updatedResult);
+							});
+						}
+					}
+					
+					// AniList
+					if (imdbId) {
+						const anilistRating = await fetchAniListRating(imdbId, ratingsData.originalTitle, ratingsData.year);
+						if (anilistRating && anilistRating.score) {
+							const ratingItem = document.createElement("div");
+							ratingItem.className = "custom-rating-item";
+							
+							const img = document.createElement("img");
+							img.src = LOGO.anilist;
+							img.alt = "AniList";
+							img.className = "custom-rating-logo";
+							img.title = `AniList: ${anilistRating.score}`;
+							
+							const value = document.createElement("span");
+							value.className = "custom-rating-value";
+							value.textContent = anilistRating.score;
+							
+							ratingItem.appendChild(img);
+							ratingItem.appendChild(value);
+							metaDiv.appendChild(ratingItem);
+						}
+					}
 
-                    // ── Kinopoisk ──
-                    if (ratingsData.originalTitle && ratingsData.year) {
-                        const kpRating = await fetchKinopoiskRating(
-                            ratingsData.originalTitle,
-                            parseInt(ratingsData.year, 10),
-                            type
-                        );
-                        if (kpRating && kpRating.score) {
-                            const ratingItem = document.createElement("div");
-                            ratingItem.className = "custom-rating-item";
-                            
-                            const img = document.createElement("img");
-                            img.src = LOGO.kinopoisk;
-                            img.alt = "Kinopoisk";
-                            img.className = "custom-rating-logo";
-                            img.title = `Kinopoisk: ${kpRating.score}`;
-                            
-                            const value = document.createElement("span");
-                            value.className = "custom-rating-value";
-                            value.textContent = kpRating.score;
-                            
-                            ratingItem.appendChild(img);
-                            ratingItem.appendChild(value);
-                            metaDiv.appendChild(ratingItem);
-                        }
-                    }
-                    
-                    // ── Allociné ──
-                    if (imdbId) {
-                        const allocineData = await fetchAllocineRatings(imdbId, type);
-                        if (allocineData) {
-                            if (allocineData.press) {
-                                const ratingItem = document.createElement("div");
-                                ratingItem.className = "custom-rating-item";
+					// Kinopoisk
+					if (ratingsData.originalTitle && ratingsData.year) {
+						const kpRating = await fetchKinopoiskRating(
+							ratingsData.originalTitle,
+							parseInt(ratingsData.year, 10),
+							type
+						);
+						if (kpRating && kpRating.score) {
+							const ratingItem = document.createElement("div");
+							ratingItem.className = "custom-rating-item";
+							
+							const img = document.createElement("img");
+							img.src = LOGO.kinopoisk;
+							img.alt = "Kinopoisk";
+							img.className = "custom-rating-logo";
+							img.title = `Kinopoisk: ${kpRating.score}`;
+							
+							const value = document.createElement("span");
+							value.className = "custom-rating-value";
+							value.textContent = kpRating.score;
+							
+							ratingItem.appendChild(img);
+							ratingItem.appendChild(value);
+							metaDiv.appendChild(ratingItem);
+						}
+					}
+					
+					// Allociné
+					if (imdbId) {
+						const allocineData = await fetchAllocineRatings(imdbId, type);
+						if (allocineData) {
+							if (allocineData.press) {
+								const ratingItem = document.createElement("div");
+								ratingItem.className = "custom-rating-item";
 
-                                const img = document.createElement("img");
-                                img.src = LOGO.allocine_critics;
-                                img.alt = "Allociné Presse";
-                                img.className = "custom-rating-logo";
-                                img.title = `Allociné Presse: ${allocineData.press.toFixed(1)} / 5`;
+								const img = document.createElement("img");
+								img.src = LOGO.allocine_critics;
+								img.alt = "Allociné Presse";
+								img.className = "custom-rating-logo";
+								img.title = `Allociné Presse: ${allocineData.press.toFixed(1)} / 5`;
 
-                                const value = document.createElement("span");
-                                value.className = "custom-rating-value";
-                                value.textContent = allocineData.press.toFixed(1);
+								const value = document.createElement("span");
+								value.className = "custom-rating-value";
+								value.textContent = allocineData.press.toFixed(1);
 
-                                ratingItem.appendChild(img);
-                                ratingItem.appendChild(value);
-                                metaDiv.appendChild(ratingItem);
-                            }
+								ratingItem.appendChild(img);
+								ratingItem.appendChild(value);
+								metaDiv.appendChild(ratingItem);
+							}
 
-                            if (allocineData.audience) {
-                                const ratingItem = document.createElement("div");
-                                ratingItem.className = "custom-rating-item";
+							if (allocineData.audience) {
+								const ratingItem = document.createElement("div");
+								ratingItem.className = "custom-rating-item";
 
-                                const img = document.createElement("img");
-                                img.src = LOGO.allocine_audience;
-                                img.alt = "Allociné Spectateurs";
-                                img.className = "custom-rating-logo";
-                                img.title = `Allociné Spectateurs: ${allocineData.audience.toFixed(1)} / 5`;
+								const img = document.createElement("img");
+								img.src = LOGO.allocine_audience;
+								img.alt = "Allociné Spectateurs";
+								img.className = "custom-rating-logo";
+								img.title = `Allociné Spectateurs: ${allocineData.audience.toFixed(1)} / 5`;
 
-                                const value = document.createElement("span");
-                                value.className = "custom-rating-value";
-                                value.textContent = allocineData.audience.toFixed(1);
+								const value = document.createElement("span");
+								value.className = "custom-rating-value";
+								value.textContent = allocineData.audience.toFixed(1);
 
-                                ratingItem.appendChild(img);
-                                ratingItem.appendChild(value);
-                                metaDiv.appendChild(ratingItem);
-                            }
-                        }
-                    }
-                    
-                });
-            }
-        } else {
-            
-            if (item.CriticRating !== null && item.CriticRating !== undefined) {
-                const rtRating = document.createElement("div");
-                rtRating.className = "meta-rating-item banner-meta-item";
-                const isFresh = item.CriticRating >= 60;
-                const tomatoImg = isFresh ? 'fresh.png' : 'rotten.png';
-                
-                rtRating.innerHTML = `
-                    <img src="modules/mediainfo/${tomatoImg}" class="meta-rating-icon" alt="Rotten Tomatoes">
-                    <span class="meta-rating-score">${item.CriticRating}%</span>
-                `;
-                metaDiv.appendChild(rtRating);
-            }
-            
-            if (item.CommunityRating) {
-                const imdbRating = document.createElement("div");
-                imdbRating.className = "meta-rating-item banner-meta-item";
-                imdbRating.innerHTML = `
-                    <svg class="meta-rating-star" viewBox="0 0 24 24">
-                        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
-                    </svg>
-                    <span class="meta-rating-score">${item.CommunityRating.toFixed(1)}</span>
-                `;
-                metaDiv.appendChild(imdbRating);
-            }
-        }
-        
-        if (metaDiv.children.length > 0) {
-            infoContainer.appendChild(metaDiv);
-        }
-        
-        return infoContainer.children.length > 0 ? infoContainer : null;
-    }
+								ratingItem.appendChild(img);
+								ratingItem.appendChild(value);
+								metaDiv.appendChild(ratingItem);
+							}
+						}
+					}
+					
+				});
+			}
+		} else {
+			
+			if (item.CriticRating !== null && item.CriticRating !== undefined) {
+				const rtRating = document.createElement("div");
+				rtRating.className = "meta-rating-item banner-meta-item";
+				const isFresh = item.CriticRating >= 60;
+				const tomatoImg = isFresh ? 'fresh.png' : 'rotten.png';
+				
+				rtRating.innerHTML = `
+					<img src="modules/mediainfo/${tomatoImg}" class="meta-rating-icon" alt="Rotten Tomatoes">
+					<span class="meta-rating-score">${item.CriticRating}%</span>
+				`;
+				metaDiv.appendChild(rtRating);
+			}
+			
+			if (item.CommunityRating) {
+				const imdbRating = document.createElement("div");
+				imdbRating.className = "meta-rating-item banner-meta-item";
+				imdbRating.innerHTML = `
+					<svg class="meta-rating-star" viewBox="0 0 24 24">
+						<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+					</svg>
+					<span class="meta-rating-score">${item.CommunityRating.toFixed(1)}</span>
+				`;
+				metaDiv.appendChild(imdbRating);
+			}
+		}
+		
+		if (metaDiv.children.length > 0) {
+			infoContainer.appendChild(metaDiv);
+		}
+		
+		return infoContainer.children.length > 0 ? infoContainer : null;
+	}
     
     function createImageBackdrop(item, apiClient) {
         const img = document.createElement("img");
