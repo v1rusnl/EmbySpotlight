@@ -1,6 +1,6 @@
 /*!
  * Spotlight.js — Emby 4.9 compatible Spotlight slider with Video Backdrop Support & Custom Ratings
- * Enhanced with: YouTube Trailers, HTML5 Video, SponsorBlock, Custom Ratings (IMDb, RT, Metacritic, etc.), Oscar Wins+Nominations
+ * Enhanced with: YouTube Trailers, HTML5 Video, SponsorBlock, Custom Ratings (IMDb, RT, Metacritic, etc.), Oscar + Emmy Wins+Nominations
  * localStorage-based caching for all ratings
  * RT Scraping for Certified Fresh & Verified Hot badges
  * RT Direct Scraping fallback when MDBList has no RT data
@@ -195,7 +195,8 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         rogerebert: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/Roger_Ebert.png',
         allocine_critics: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/allocine_crit.png',
         allocine_audience: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/allocine_user.png',
-		academy: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/academyaw.png'
+        academy: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/academyaw.png',
+        emmy: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/emmy.png'
     };
     
     // ══════════════════════════════════════════════════════════════════
@@ -1354,6 +1355,177 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 		return oscarContainer;
 	}
 
+	// ══════════════════════════════════════════════════════════════════
+	// Emmy Awards (via Wikidata SPARQL)
+	// ══════════════════════════════════════════════════════════════════
+
+	function fetchEmmyAwards(imdbId) {
+		return new Promise((resolve) => {
+			if (!imdbId) {
+				resolve(null);
+				return;
+			}
+
+			const cacheKey = `emmy_awards_${imdbId}`;
+			const cached = RatingsCache.get(cacheKey);
+			if (cached !== null) {
+				if (cached.count > 0 || cached.nominations > 0) {
+					resolve(cached);
+				} else {
+					resolve(null);
+				}
+				return;
+			}
+
+			// Einfachere, zuverlässigere Abfragen
+			// Sucht nach allen Awards/Nominations die "Emmy" im englischen Label haben
+			const sparqlWins = `
+				SELECT (COUNT(DISTINCT ?award) AS ?count) WHERE {
+					?item wdt:P345 "${imdbId}" .
+					?item wdt:P166 ?award .
+					?award rdfs:label ?label .
+					FILTER(LANG(?label) = "en")
+					FILTER(CONTAINS(LCASE(?label), "emmy"))
+				}`;
+
+			const sparqlNoms = `
+				SELECT (COUNT(DISTINCT ?nom) AS ?count) WHERE {
+					?item wdt:P345 "${imdbId}" .
+					?item wdt:P1411 ?nom .
+					?nom rdfs:label ?label .
+					FILTER(LANG(?label) = "en")
+					FILTER(CONTAINS(LCASE(?label), "emmy"))
+				}`;
+
+			console.log('[Spotlight] Fetching Emmy Awards für', imdbId);
+
+			let wins = 0;
+			let nominations = 0;
+			let completedRequests = 0;
+
+			const checkComplete = () => {
+				completedRequests++;
+				if (completedRequests === 2) {
+					console.log(`[Spotlight] Emmy für ${imdbId}: ${wins} Wins, ${nominations} Nominations`);
+					const result = { count: wins, nominations: nominations };
+					RatingsCache.set(cacheKey, result);
+					if (wins > 0 || nominations > 0) {
+						resolve(result);
+					} else {
+						resolve(null);
+					}
+				}
+			};
+
+			// Wins abfragen
+			GM_xmlhttpRequest({
+				method: 'GET',
+				url: 'https://query.wikidata.org/sparql?format=json&query=' + encodeURIComponent(sparqlWins),
+				headers: {
+					'Accept': 'application/sparql-results+json',
+					'User-Agent': 'EmbySpotlightScript/1.0'
+				},
+				onload(res) {
+					if (res.status === 200) {
+						try {
+							const json = JSON.parse(res.responseText);
+							wins = parseInt(json.results?.bindings?.[0]?.count?.value || '0', 10);
+							console.log('[Spotlight] Emmy Wins raw:', json.results?.bindings);
+						} catch (e) {
+							console.error('[Spotlight] Emmy Wins parse error:', e);
+						}
+					} else {
+						console.warn('[Spotlight] Emmy Wins query failed:', res.status);
+					}
+					checkComplete();
+				},
+				onerror(err) { 
+					console.error('[Spotlight] Emmy Wins request error:', err);
+					checkComplete(); 
+				}
+			});
+
+			// Nominations abfragen
+			GM_xmlhttpRequest({
+				method: 'GET',
+				url: 'https://query.wikidata.org/sparql?format=json&query=' + encodeURIComponent(sparqlNoms),
+				headers: {
+					'Accept': 'application/sparql-results+json',
+					'User-Agent': 'EmbySpotlightScript/1.0'
+				},
+				onload(res) {
+					if (res.status === 200) {
+						try {
+							const json = JSON.parse(res.responseText);
+							nominations = parseInt(json.results?.bindings?.[0]?.count?.value || '0', 10);
+							console.log('[Spotlight] Emmy Nominations raw:', json.results?.bindings);
+						} catch (e) {
+							console.error('[Spotlight] Emmy Noms parse error:', e);
+						}
+					} else {
+						console.warn('[Spotlight] Emmy Noms query failed:', res.status);
+					}
+					checkComplete();
+				},
+				onerror(err) { 
+					console.error('[Spotlight] Emmy Noms request error:', err);
+					checkComplete(); 
+				}
+			});
+		});
+	}
+
+	function createEmmyAwardsBadge(wins, nominations) {
+		const emmyContainer = document.createElement('div');
+		emmyContainer.className = 'banner-emmys';
+		
+		// Separator-Punkt VOR dem Emmy-Logo
+		const leadingSeparator = document.createElement('span');
+		leadingSeparator.className = 'banner-emmy-text banner-emmy-leading-separator';
+		leadingSeparator.textContent = '•';
+		emmyContainer.appendChild(leadingSeparator);
+		
+		// Emmy Logo
+		const img = document.createElement('img');
+		img.src = LOGO.emmy;
+		img.alt = 'Emmy Awards';
+		img.className = 'banner-emmy-logo';
+		
+		let titleText = 'Emmy Awards:';
+		if (wins > 0) titleText += ` ${wins} gewonnen`;
+		if (wins > 0 && nominations > 0) titleText += ',';
+		if (nominations > 0) titleText += ` ${nominations} nominiert`;
+		img.title = titleText;
+		
+		emmyContainer.appendChild(img);
+
+		// Wins (falls vorhanden)
+		if (wins > 0) {
+			const winsSpan = document.createElement('span');
+			winsSpan.className = 'banner-emmy-text banner-emmy-wins';
+			winsSpan.textContent = `${wins} Win${wins !== 1 ? 's' : ''}`;
+			emmyContainer.appendChild(winsSpan);
+		}
+
+		// Separator (nur wenn beide vorhanden)
+		if (wins > 0 && nominations > 0) {
+			const dotSpan = document.createElement('span');
+			dotSpan.className = 'banner-emmy-text banner-emmy-separator';
+			dotSpan.textContent = '';
+			emmyContainer.appendChild(dotSpan);
+		}
+
+		// Nominations (falls vorhanden)
+		if (nominations > 0) {
+			const nomsSpan = document.createElement('span');
+			nomsSpan.className = 'banner-emmy-text banner-emmy-noms';
+			nomsSpan.textContent = `${nominations} Nomination${nominations !== 1 ? 's' : ''}`;
+			emmyContainer.appendChild(nomsSpan);
+		}
+
+		return emmyContainer;
+	}
+
    
     // ══════════════════════════════════════════════════════════════════
     // SponsorBlock
@@ -1952,17 +2124,20 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 			flex-wrap: wrap;
 		}
 
-		.spotlight .banner-oscars {
+		.spotlight .banner-oscars,
+		.spotlight .banner-emmys {
 			display: flex;
 			align-items: center;
 			gap: 0.4rem;
 		}
 		
-		.banner-oscar-text.banner-oscar-leading-separator {
+		.banner-oscar-text.banner-oscar-leading-separator,
+		.banner-emmy-text.banner-emmy-leading-separator {
 			color: rgba(255, 255, 255, 0.5);
 		}
 
-		.spotlight .banner-oscar-logo {
+		.spotlight .banner-oscar-logo,
+		.spotlight .banner-emmy-logo {
 			height: clamp(1.1rem, 1.8vw, 1.4rem);
 			width: auto;
 			object-fit: contain;
@@ -1972,7 +2147,8 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 			margin-left: 9px;
 		}
 
-		.spotlight .banner-oscar-text {
+		.spotlight .banner-oscar-text,
+		.spotlight .banner-emmy-text {
 			font-size: clamp(1.1rem, 1.8vw, 1.4rem);
 			font-weight: 500;
 			text-shadow: 1px 1px 4px rgba(0,0,0,0.9);
@@ -1983,12 +2159,18 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 			color: #d4af37;
 		}
 
-		.spotlight .banner-oscar-separator {
+		.spotlight .banner-emmy-wins {
+			color: #c9a227;
+		}
+
+		.spotlight .banner-oscar-separator,
+		.spotlight .banner-emmy-separator {
 			color: #fff;
 			margin: 0 0.3rem;
 		}
 
-		.spotlight .banner-oscar-noms {
+		.spotlight .banner-oscar-noms,
+		.spotlight .banner-emmy-noms {
 			color: rgba(255,255,255,0.7);
 		}
         
@@ -2443,7 +2625,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 		const infoContainer = document.createElement("div");
 		infoContainer.className = "banner-info";
 		
-		// Container für Genres + Oscars (in einer Zeile)
+		// Container für Genres + Oscars + Emmys (in einer Zeile)
 		const genresRow = document.createElement("div");
 		genresRow.className = "banner-genres-row";
 		
@@ -2466,6 +2648,11 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 		oscarPlaceholder.className = "banner-oscars-placeholder";
 		genresRow.appendChild(oscarPlaceholder);
 		
+		// Emmy-Platzhalter (wird async befüllt)
+		const emmyPlaceholder = document.createElement("div");
+		emmyPlaceholder.className = "banner-emmys-placeholder";
+		genresRow.appendChild(emmyPlaceholder);
+		
 		infoContainer.appendChild(genresRow);
 		
 		// Academy Awards async laden
@@ -2480,8 +2667,20 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 					oscarPlaceholder.remove();
 				}
 			});
+			
+			// Emmy Awards async laden
+			fetchEmmyAwards(imdbId).then(emmyData => {
+				if (emmyData && (emmyData.count > 0 || emmyData.nominations > 0)) {
+					const emmyBadge = createEmmyAwardsBadge(emmyData.count, emmyData.nominations);
+					emmyPlaceholder.replaceWith(emmyBadge);
+					console.log(`[Spotlight] Emmy Awards für ${item.Name}: ${emmyData.count} Wins, ${emmyData.nominations} Nominations`);
+				} else {
+					emmyPlaceholder.remove();
+				}
+			});
 		} else {
 			oscarPlaceholder.remove();
+			emmyPlaceholder.remove();
 		}
 		
 		const metaDiv = document.createElement("div");
