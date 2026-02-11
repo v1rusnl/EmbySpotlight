@@ -1,10 +1,10 @@
 /*!
  * Spotlight.js — Emby 4.9 compatible Spotlight slider with Video Backdrop Support & Custom Ratings
- * Enhanced with: YouTube Trailers, HTML5 Video, SponsorBlock, Custom Ratings (IMDb, RT, Metacritic, etc.), Oscar + Emmy Wins+Nominations
+ * Enhanced with: YouTube Trailers, HTML5 Video, SponsorBlock, Custom Ratings (IMDb, RT, Metacritic, etc.), Oscar + Emmy + Globes Wins+Nominations
  * localStorage-based caching for all ratings
  * RT Scraping for Certified Fresh & Verified Hot badges
  * RT Direct Scraping fallback when MDBList has no RT data
- * Generated: 2026-02-10
+ * Generated: 2026-02-11
  *
  * CORS PROXY (optional):
  * - Without: Most ratings work via MDBList API
@@ -196,7 +196,14 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         allocine_critics: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/allocine_crit.png',
         allocine_audience: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/allocine_user.png',
         academy: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/academyaw.png',
-        emmy: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/emmy.png'
+        emmy: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/emmy.png',
+        globes: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/globes.png',
+        oscars_nom: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/Oscars_Nom.png',
+        oscars_win: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/Oscars_Win.png',
+        globes_nom: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/Globe_Nom.png',
+        globes_win: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/Globe_Win.png',
+        emmy_nom: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/Emmy_Nom.png',
+        emmy_win: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/Emmy_Win.png'
     };
     
     // ══════════════════════════════════════════════════════════════════
@@ -1304,57 +1311,6 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 		});
 	}
 
-	function createAcademyAwardsBadge(wins, nominations) {
-		const oscarContainer = document.createElement('div');
-		oscarContainer.className = 'banner-oscars';
-		
-		// Separator-Punkt VOR dem Oscar-Logo (wie zwischen Genres)
-		const leadingSeparator = document.createElement('span');
-		leadingSeparator.className = 'banner-oscar-text banner-oscar-leading-separator';
-		leadingSeparator.textContent = '•';
-		oscarContainer.appendChild(leadingSeparator);
-		
-		// Oscar Logo
-		const img = document.createElement('img');
-		img.src = LOGO.academy;
-		img.alt = 'Academy Awards';
-		img.className = 'banner-oscar-logo';
-		
-		let titleText = 'Academy Awards:';
-		if (wins > 0) titleText += ` ${wins} gewonnen`;
-		if (wins > 0 && nominations > 0) titleText += ',';
-		if (nominations > 0) titleText += ` ${nominations} nominiert`;
-		img.title = titleText;
-		
-		oscarContainer.appendChild(img);
-
-		// Wins (falls vorhanden)
-		if (wins > 0) {
-			const winsSpan = document.createElement('span');
-			winsSpan.className = 'banner-oscar-text banner-oscar-wins';
-			winsSpan.textContent = `${wins} Win${wins !== 1 ? 's' : ''}`;
-			oscarContainer.appendChild(winsSpan);
-		}
-
-		// Separator (nur wenn beide vorhanden)
-		if (wins > 0 && nominations > 0) {
-			const dotSpan = document.createElement('span');
-			dotSpan.className = 'banner-oscar-text banner-oscar-separator';
-			dotSpan.textContent = '';
-			oscarContainer.appendChild(dotSpan);
-		}
-
-		// Nominations (falls vorhanden)
-		if (nominations > 0) {
-			const nomsSpan = document.createElement('span');
-			nomsSpan.className = 'banner-oscar-text banner-oscar-noms';
-			nomsSpan.textContent = `${nominations} Nomination${nominations !== 1 ? 's' : ''}`;
-			oscarContainer.appendChild(nomsSpan);
-		}
-
-		return oscarContainer;
-	}
-
 	// ══════════════════════════════════════════════════════════════════
 	// Emmy Awards (via Wikidata SPARQL)
 	// ══════════════════════════════════════════════════════════════════
@@ -1474,56 +1430,242 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 			});
 		});
 	}
+	
+	// ══════════════════════════════════════════════════════════════════
+	// Golden Globe Awards (via Wikidata SPARQL)
+	// ══════════════════════════════════════════════════════════════════
+
+	function fetchGoldenGlobeAwards(imdbId) {
+		return new Promise((resolve) => {
+			if (!imdbId) {
+				resolve(null);
+				return;
+			}
+
+			const cacheKey = `golden_globe_awards_${imdbId}`;
+			const cached = RatingsCache.get(cacheKey);
+			if (cached !== null) {
+				if (cached.count > 0 || cached.nominations > 0) {
+					resolve(cached);
+				} else {
+					resolve(null);
+				}
+				return;
+			}
+
+			const sparqlWins = `
+				SELECT (COUNT(DISTINCT ?award) AS ?count) WHERE {
+					?item wdt:P345 "${imdbId}" .
+					?item wdt:P166 ?award .
+					?award rdfs:label ?label .
+					FILTER(LANG(?label) = "en")
+					FILTER(CONTAINS(LCASE(?label), "golden globe"))
+				}`;
+
+			const sparqlNoms = `
+				SELECT (COUNT(DISTINCT ?nom) AS ?count) WHERE {
+					?item wdt:P345 "${imdbId}" .
+					?item wdt:P1411 ?nom .
+					?nom rdfs:label ?label .
+					FILTER(LANG(?label) = "en")
+					FILTER(CONTAINS(LCASE(?label), "golden globe"))
+				}`;
+
+			console.log('[Spotlight] Fetching Golden Globe Awards für', imdbId);
+
+			let wins = 0;
+			let nominations = 0;
+			let completedRequests = 0;
+
+			const checkComplete = () => {
+				completedRequests++;
+				if (completedRequests === 2) {
+					console.log(`[Spotlight] Golden Globes für ${imdbId}: ${wins} Wins, ${nominations} Nominations`);
+					const result = { count: wins, nominations: nominations };
+					RatingsCache.set(cacheKey, result);
+					if (wins > 0 || nominations > 0) {
+						resolve(result);
+					} else {
+						resolve(null);
+					}
+				}
+			};
+
+			GM_xmlhttpRequest({
+				method: 'GET',
+				url: 'https://query.wikidata.org/sparql?format=json&query=' + encodeURIComponent(sparqlWins),
+				headers: {
+					'Accept': 'application/sparql-results+json',
+					'User-Agent': 'EmbySpotlightScript/1.0'
+				},
+				onload(res) {
+					if (res.status === 200) {
+						try {
+							const json = JSON.parse(res.responseText);
+							wins = parseInt(json.results?.bindings?.[0]?.count?.value || '0', 10);
+						} catch (e) {
+							console.error('[Spotlight] Golden Globe Wins parse error:', e);
+						}
+					}
+					checkComplete();
+				},
+				onerror() { checkComplete(); }
+			});
+
+			GM_xmlhttpRequest({
+				method: 'GET',
+				url: 'https://query.wikidata.org/sparql?format=json&query=' + encodeURIComponent(sparqlNoms),
+				headers: {
+					'Accept': 'application/sparql-results+json',
+					'User-Agent': 'EmbySpotlightScript/1.0'
+				},
+				onload(res) {
+					if (res.status === 200) {
+						try {
+							const json = JSON.parse(res.responseText);
+							nominations = parseInt(json.results?.bindings?.[0]?.count?.value || '0', 10);
+						} catch (e) {
+							console.error('[Spotlight] Golden Globe Noms parse error:', e);
+						}
+					}
+					checkComplete();
+				},
+				onerror() { checkComplete(); }
+			});
+		});
+	}
+
+	// ══════════════════════════════════════════════════════════════════
+	// Generic Award Badge Creator (used by Oscars, Golden Globes, Emmys)
+	// Uses nominations - wins for grey statues
+	// ══════════════════════════════════════════════════════════════════
+
+	function createAwardStatueBadge(options) {
+		const {
+			containerClass,
+			textClass,
+			separatorClass,
+			logoClass,
+			winsClass,
+			nomsClass,
+			logoSrc,
+			logoAlt,
+			winIconKey,
+			nomIconKey,
+			wins,
+			nominations,
+			awardName,
+			iconSize
+		} = options;
+
+		const nomOnly = Math.max(0, nominations - wins);
+
+		const container = document.createElement('div');
+		container.className = containerClass;
+
+		// Leading separator dot
+		const leadingSeparator = document.createElement('span');
+		leadingSeparator.className = `${textClass} ${separatorClass}`;
+		leadingSeparator.textContent = '•';
+		container.appendChild(leadingSeparator);
+
+		// Award category logo
+		let titleText = `${awardName}:`;
+		if (wins > 0) titleText += ` ${wins} Won`;
+		if (wins > 0 && nomOnly > 0) titleText += ',';
+		if (nomOnly > 0) titleText += ` ${nomOnly} Nominated`;
+
+		const logo = document.createElement('img');
+		logo.src = logoSrc;
+		logo.alt = logoAlt;
+		logo.className = logoClass;
+		logo.title = titleText;
+		container.appendChild(logo);
+
+		const size = iconSize || 'clamp(1.1rem, 1.8vw, 1.4rem)';
+
+		// Win statues (gold)
+		for (let i = 0; i < wins; i++) {
+			const statue = document.createElement('img');
+			statue.src = LOGO[winIconKey];
+			statue.alt = `${awardName} Win`;
+			statue.title = `${awardName} Win`;
+			statue.style.cssText = `height:${size}; vertical-align:middle; margin-bottom: 4px; margin-left: -4px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.8));`;
+			container.appendChild(statue);
+		}
+
+		// Small gap between wins and nomination-only statues
+		if (wins > 0 && nomOnly > 0) {
+			const gap = document.createElement('span');
+			gap.style.cssText = 'display:inline-block; width:0px;';
+			container.appendChild(gap);
+		}
+
+		// Nomination-only statues (grey)
+		for (let i = 0; i < nomOnly; i++) {
+			const statue = document.createElement('img');
+			statue.src = LOGO[nomIconKey];
+			statue.alt = `${awardName} Nomination`;
+			statue.title = `${awardName} Nomination`;
+			statue.style.cssText = `height:${size}; vertical-align:middle; margin-bottom: 4px; margin-left: -4px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.8));`;
+			container.appendChild(statue);
+		}
+
+		return container;
+	}
+
+	function createAcademyAwardsBadge(wins, nominations) {
+		return createAwardStatueBadge({
+			containerClass: 'banner-oscars',
+			textClass: 'banner-oscar-text',
+			separatorClass: 'banner-oscar-leading-separator',
+			logoClass: 'banner-oscar-logo',
+			winsClass: 'banner-oscar-wins',
+			nomsClass: 'banner-oscar-noms',
+			logoSrc: LOGO.academy,
+			logoAlt: 'Academy Awards',
+			winIconKey: 'oscars_win',
+			nomIconKey: 'oscars_nom',
+			wins: wins,
+			nominations: nominations,
+			awardName: 'Academy Awards'
+		});
+	}
 
 	function createEmmyAwardsBadge(wins, nominations) {
-		const emmyContainer = document.createElement('div');
-		emmyContainer.className = 'banner-emmys';
-		
-		// Separator-Punkt VOR dem Emmy-Logo
-		const leadingSeparator = document.createElement('span');
-		leadingSeparator.className = 'banner-emmy-text banner-emmy-leading-separator';
-		leadingSeparator.textContent = '•';
-		emmyContainer.appendChild(leadingSeparator);
-		
-		// Emmy Logo
-		const img = document.createElement('img');
-		img.src = LOGO.emmy;
-		img.alt = 'Emmy Awards';
-		img.className = 'banner-emmy-logo';
-		
-		let titleText = 'Emmy Awards:';
-		if (wins > 0) titleText += ` ${wins} gewonnen`;
-		if (wins > 0 && nominations > 0) titleText += ',';
-		if (nominations > 0) titleText += ` ${nominations} nominiert`;
-		img.title = titleText;
-		
-		emmyContainer.appendChild(img);
+		return createAwardStatueBadge({
+			containerClass: 'banner-emmys',
+			textClass: 'banner-emmy-text',
+			separatorClass: 'banner-emmy-leading-separator',
+			logoClass: 'banner-emmy-logo',
+			winsClass: 'banner-emmy-wins',
+			nomsClass: 'banner-emmy-noms',
+			logoSrc: LOGO.emmy,
+			logoAlt: 'Emmy Awards',
+			winIconKey: 'emmy_win',
+			nomIconKey: 'emmy_nom',
+			wins: wins,
+			nominations: nominations,
+			awardName: 'Emmy Awards'
+		});
+	}
 
-		// Wins (falls vorhanden)
-		if (wins > 0) {
-			const winsSpan = document.createElement('span');
-			winsSpan.className = 'banner-emmy-text banner-emmy-wins';
-			winsSpan.textContent = `${wins} Win${wins !== 1 ? 's' : ''}`;
-			emmyContainer.appendChild(winsSpan);
-		}
-
-		// Separator (nur wenn beide vorhanden)
-		if (wins > 0 && nominations > 0) {
-			const dotSpan = document.createElement('span');
-			dotSpan.className = 'banner-emmy-text banner-emmy-separator';
-			dotSpan.textContent = '';
-			emmyContainer.appendChild(dotSpan);
-		}
-
-		// Nominations (falls vorhanden)
-		if (nominations > 0) {
-			const nomsSpan = document.createElement('span');
-			nomsSpan.className = 'banner-emmy-text banner-emmy-noms';
-			nomsSpan.textContent = `${nominations} Nomination${nominations !== 1 ? 's' : ''}`;
-			emmyContainer.appendChild(nomsSpan);
-		}
-
-		return emmyContainer;
+	function createGoldenGlobeAwardsBadge(wins, nominations) {
+		return createAwardStatueBadge({
+			containerClass: 'banner-globes',
+			textClass: 'banner-globes-text',
+			separatorClass: 'banner-globes-leading-separator',
+			logoClass: 'banner-globes-logo',
+			winsClass: 'banner-globes-wins',
+			nomsClass: 'banner-globes-noms',
+			logoSrc: LOGO.globes,
+			logoAlt: 'Golden Globe Awards',
+			winIconKey: 'globes_win',
+			nomIconKey: 'globes_nom',
+			wins: wins,
+			nominations: nominations,
+			awardName: 'Golden Globe Awards'
+		});
 	}
 
    
@@ -2117,63 +2259,54 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             pointer-events: all;
         }
 
-		.spotlight .banner-genres-row {
-			display: flex;
-			align-items: center;
-			gap: 1.5rem;
-			flex-wrap: wrap;
-		}
+        /* ═══════════════════════════════════════════════════
+           Awards Row: Genres + Oscars + Golden Globes + Emmys
+           ═══════════════════════════════════════════════════ */
 
-		.spotlight .banner-oscars,
-		.spotlight .banner-emmys {
-			display: flex;
-			align-items: center;
-			gap: 0.4rem;
-		}
-		
-		.banner-oscar-text.banner-oscar-leading-separator,
-		.banner-emmy-text.banner-emmy-leading-separator {
-			color: rgba(255, 255, 255, 0.5);
-		}
+        .spotlight .banner-genres-row {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+            flex-wrap: wrap;
+        }
 
-		.spotlight .banner-oscar-logo,
-		.spotlight .banner-emmy-logo {
-			height: clamp(1.1rem, 1.8vw, 1.4rem);
-			width: auto;
-			object-fit: contain;
-			filter: drop-shadow(0 2px 4px rgba(0,0,0,0.8));
-			margin-bottom: 5px;
-			margin-right: 12px;
-			margin-left: 9px;
-		}
+        .spotlight .banner-oscars,
+        .spotlight .banner-globes,
+        .spotlight .banner-emmys {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
 
-		.spotlight .banner-oscar-text,
-		.spotlight .banner-emmy-text {
-			font-size: clamp(1.1rem, 1.8vw, 1.4rem);
-			font-weight: 500;
-			text-shadow: 1px 1px 4px rgba(0,0,0,0.9);
-			margin-left: -8px;
-		}
+        .banner-oscar-text.banner-oscar-leading-separator,
+        .banner-globes-text.banner-globes-leading-separator,
+        .banner-emmy-text.banner-emmy-leading-separator {
+            color: rgba(255, 255, 255, 0.5);
+        }
 
-		.spotlight .banner-oscar-wins {
-			color: #d4af37;
-		}
+        .spotlight .banner-oscar-logo,
+        .spotlight .banner-globes-logo,
+        .spotlight .banner-emmy-logo {
+            height: clamp(1.1rem, 1.8vw, 1.4rem);
+            width: auto;
+            object-fit: contain;
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.8));
+            margin-bottom: 3px;
+            margin-right: 5px;
+            margin-left: 9px;
+        }
 
-		.spotlight .banner-emmy-wins {
-			color: #c9a227;
-		}
+        .spotlight .banner-oscar-text,
+        .spotlight .banner-globes-text,
+        .spotlight .banner-emmy-text {
+            font-size: clamp(1.1rem, 1.8vw, 1.4rem);
+            font-weight: 500;
+            text-shadow: 1px 1px 4px rgba(0,0,0,0.9);
+            margin-left: -8px;
+        }
 
-		.spotlight .banner-oscar-separator,
-		.spotlight .banner-emmy-separator {
-			color: #fff;
-			margin: 0 0.3rem;
-		}
+        /* ═══════════════════════════════════════════════════ */
 
-		.spotlight .banner-oscar-noms,
-		.spotlight .banner-emmy-noms {
-			color: rgba(255,255,255,0.7);
-		}
-        
         .spotlight .play-button {
             width: 80px;
             height: 80px;
@@ -2294,6 +2427,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         .spotlight .mute-button:hover svg {
             filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.5));
         }
+
         .spotlight .refresh-button {
             position: absolute;
             bottom: 12rem;
@@ -2313,15 +2447,18 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             opacity: 0;
             pointer-events: none;
         }
+
         .spotlight-container:hover .refresh-button.visible {
             opacity: 1;
             pointer-events: all;
         }
+
         .spotlight .refresh-button:hover {
             transform: scale(1.02) rotate(180deg);
             background: ${playbuttonColor};
             box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
         }
+
         .spotlight .refresh-button svg {
             width: 24px;
             height: 24px;
@@ -2329,20 +2466,20 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
             transition: filter 0.3s ease;
         }
+
         .spotlight .refresh-button:hover svg {
             filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.5));
         }
+
         .spotlight .refresh-button.refreshing {
             animation: spin 1s linear infinite;
         }
+
         @keyframes spin {
-            from {
-                transform: rotate(0deg);
-            }
-            to {
-                transform: rotate(360deg);
-            }
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
         }
+
         @media (max-width: 768px), (orientation: portrait) {
             .spotlight .refresh-button {
                 bottom: calc(1rem + 100px + 1rem);
@@ -2625,7 +2762,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 		const infoContainer = document.createElement("div");
 		infoContainer.className = "banner-info";
 		
-		// Container für Genres + Oscars + Emmys (in einer Zeile)
+		// Container für Genres + Oscars + Golden Globes + Emmys (in einer Zeile)
 		const genresRow = document.createElement("div");
 		genresRow.className = "banner-genres-row";
 		
@@ -2647,6 +2784,11 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 		const oscarPlaceholder = document.createElement("div");
 		oscarPlaceholder.className = "banner-oscars-placeholder";
 		genresRow.appendChild(oscarPlaceholder);
+
+		// Golden Globe-Platzhalter (wird async befüllt)
+		const globesPlaceholder = document.createElement("div");
+		globesPlaceholder.className = "banner-globes-placeholder";
+		genresRow.appendChild(globesPlaceholder);
 		
 		// Emmy-Platzhalter (wird async befüllt)
 		const emmyPlaceholder = document.createElement("div");
@@ -2655,9 +2797,10 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 		
 		infoContainer.appendChild(genresRow);
 		
-		// Academy Awards async laden
+		// Awards async laden
 		const imdbId = getImdbId(item);
 		if (imdbId) {
+			// Academy Awards
 			fetchAcademyAwards(imdbId).then(oscarData => {
 				if (oscarData && (oscarData.count > 0 || oscarData.nominations > 0)) {
 					const oscarBadge = createAcademyAwardsBadge(oscarData.count, oscarData.nominations);
@@ -2667,8 +2810,19 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 					oscarPlaceholder.remove();
 				}
 			});
+
+			// Golden Globe Awards
+			fetchGoldenGlobeAwards(imdbId).then(globesData => {
+				if (globesData && (globesData.count > 0 || globesData.nominations > 0)) {
+					const globesBadge = createGoldenGlobeAwardsBadge(globesData.count, globesData.nominations);
+					globesPlaceholder.replaceWith(globesBadge);
+					console.log(`[Spotlight] Golden Globes für ${item.Name}: ${globesData.count} Wins, ${globesData.nominations} Nominations`);
+				} else {
+					globesPlaceholder.remove();
+				}
+			});
 			
-			// Emmy Awards async laden
+			// Emmy Awards
 			fetchEmmyAwards(imdbId).then(emmyData => {
 				if (emmyData && (emmyData.count > 0 || emmyData.nominations > 0)) {
 					const emmyBadge = createEmmyAwardsBadge(emmyData.count, emmyData.nominations);
@@ -2680,6 +2834,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 			});
 		} else {
 			oscarPlaceholder.remove();
+			globesPlaceholder.remove();
 			emmyPlaceholder.remove();
 		}
 		
@@ -2711,7 +2866,6 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 					
 					const hasRTFromMDBList = ratingsData._hasRTFromMDBList;
 					
-					// Render all rating badges from MDBList
 					ratingsData.ratings.forEach(rating => {
 						const ratingItem = document.createElement("div");
 						ratingItem.className = "custom-rating-item";
@@ -2742,44 +2896,35 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 							if (rtDirect.criticsScore !== null) {
 								const criticsLogo = rtDirect.criticsScore < 60 ? 'tomatoes_rotten' :
 												   (rtDirect.criticsCertified ? 'tomatoes_certified' : 'tomatoes');
-								
 								const ratingItem = document.createElement("div");
 								ratingItem.className = "custom-rating-item";
-								
 								const img = document.createElement("img");
 								img.src = LOGO[criticsLogo];
 								img.alt = "Rotten Tomatoes";
 								img.className = "custom-rating-logo";
 								img.title = `Rotten Tomatoes: ${rtDirect.criticsScore}%`;
 								img.dataset.source = criticsLogo;
-								
 								const value = document.createElement("span");
 								value.className = "custom-rating-value";
 								value.textContent = rtDirect.criticsScore;
-								
 								ratingItem.appendChild(img);
 								ratingItem.appendChild(value);
 								metaDiv.appendChild(ratingItem);
 							}
-							
 							if (rtDirect.audienceScore !== null) {
 								const audienceLogo = rtDirect.audienceScore < 60 ? 'audience_rotten' :
 													(rtDirect.audienceCertified ? 'rotten_ver' : 'audience');
-								
 								const ratingItem = document.createElement("div");
 								ratingItem.className = "custom-rating-item";
-								
 								const img = document.createElement("img");
 								img.src = LOGO[audienceLogo];
 								img.alt = "RT Audience";
 								img.className = "custom-rating-logo";
 								img.title = `RT Audience: ${rtDirect.audienceScore}%`;
 								img.dataset.source = audienceLogo;
-								
 								const value = document.createElement("span");
 								value.className = "custom-rating-value";
 								value.textContent = rtDirect.audienceScore;
-								
 								ratingItem.appendChild(img);
 								ratingItem.appendChild(value);
 								metaDiv.appendChild(ratingItem);
@@ -2794,11 +2939,9 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 						if (tomatoesScore >= 60 || audienceScore >= 60) {
 							fetchRTCertifiedStatus(imdbId, type).then(rtStatus => {
 								const allLogos = metaDiv.querySelectorAll('.custom-rating-logo');
-								
 								allLogos.forEach(logoImg => {
 									const ratingType = logoImg.dataset.ratingType;
 									const currentSource = logoImg.dataset.source;
-									
 									if (ratingType === 'critics' && tomatoesScore >= 60 && rtStatus.criticsCertified !== null) {
 										if (rtStatus.criticsCertified === true && currentSource !== 'tomatoes_certified') {
 											logoImg.src = LOGO.tomatoes_certified;
@@ -2808,7 +2951,6 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 											logoImg.dataset.source = 'tomatoes';
 										}
 									}
-									
 									if (ratingType === 'audience' && audienceScore >= 60 && rtStatus.audienceCertified !== null) {
 										if (rtStatus.audienceCertified === true && currentSource !== 'rotten_ver') {
 											logoImg.src = LOGO.rotten_ver;
@@ -2819,27 +2961,18 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 										}
 									}
 								});
-								
-								// Update cache
 								const cacheKey = `mdblist_${type}_${tmdbId}`;
 								const updatedRatings = ratingsData.ratings.map(r => {
 									if (r._isCritics && tomatoesScore >= 60 && rtStatus.criticsCertified !== null) {
-										if (rtStatus.criticsCertified === true) {
-											return { ...r, key: 'tomatoes_certified', logo: LOGO.tomatoes_certified };
-										} else if (rtStatus.criticsCertified === false && r.key === 'tomatoes_certified') {
-											return { ...r, key: 'tomatoes', logo: LOGO.tomatoes };
-										}
+										if (rtStatus.criticsCertified === true) return { ...r, key: 'tomatoes_certified', logo: LOGO.tomatoes_certified };
+										else if (rtStatus.criticsCertified === false && r.key === 'tomatoes_certified') return { ...r, key: 'tomatoes', logo: LOGO.tomatoes };
 									}
 									if (r._isAudience && audienceScore >= 60 && rtStatus.audienceCertified !== null) {
-										if (rtStatus.audienceCertified === true) {
-											return { ...r, key: 'rotten_ver', logo: LOGO.rotten_ver };
-										} else if (rtStatus.audienceCertified === false && r.key === 'rotten_ver') {
-											return { ...r, key: 'audience', logo: LOGO.audience };
-										}
+										if (rtStatus.audienceCertified === true) return { ...r, key: 'rotten_ver', logo: LOGO.rotten_ver };
+										else if (rtStatus.audienceCertified === false && r.key === 'rotten_ver') return { ...r, key: 'audience', logo: LOGO.audience };
 									}
 									return r;
 								});
-								
 								const updatedResult = { ...ratingsData, ratings: updatedRatings };
 								const memKey = `mdb_${type}_${tmdbId}`;
 								STATE.ratingsCache[memKey] = updatedResult;
@@ -2854,17 +2987,14 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 						if (anilistRating && anilistRating.score) {
 							const ratingItem = document.createElement("div");
 							ratingItem.className = "custom-rating-item";
-							
 							const img = document.createElement("img");
 							img.src = LOGO.anilist;
 							img.alt = "AniList";
 							img.className = "custom-rating-logo";
 							img.title = `AniList: ${anilistRating.score}`;
-							
 							const value = document.createElement("span");
 							value.className = "custom-rating-value";
 							value.textContent = anilistRating.score;
-							
 							ratingItem.appendChild(img);
 							ratingItem.appendChild(value);
 							metaDiv.appendChild(ratingItem);
@@ -2873,25 +3003,18 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 
 					// Kinopoisk
 					if (ratingsData.originalTitle && ratingsData.year) {
-						const kpRating = await fetchKinopoiskRating(
-							ratingsData.originalTitle,
-							parseInt(ratingsData.year, 10),
-							type
-						);
+						const kpRating = await fetchKinopoiskRating(ratingsData.originalTitle, parseInt(ratingsData.year, 10), type);
 						if (kpRating && kpRating.score) {
 							const ratingItem = document.createElement("div");
 							ratingItem.className = "custom-rating-item";
-							
 							const img = document.createElement("img");
 							img.src = LOGO.kinopoisk;
 							img.alt = "Kinopoisk";
 							img.className = "custom-rating-logo";
 							img.title = `Kinopoisk: ${kpRating.score}`;
-							
 							const value = document.createElement("span");
 							value.className = "custom-rating-value";
 							value.textContent = kpRating.score;
-							
 							ratingItem.appendChild(img);
 							ratingItem.appendChild(value);
 							metaDiv.appendChild(ratingItem);
@@ -2905,60 +3028,49 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 							if (allocineData.press) {
 								const ratingItem = document.createElement("div");
 								ratingItem.className = "custom-rating-item";
-
 								const img = document.createElement("img");
 								img.src = LOGO.allocine_critics;
 								img.alt = "Allociné Presse";
 								img.className = "custom-rating-logo";
 								img.title = `Allociné Presse: ${allocineData.press.toFixed(1)} / 5`;
-
 								const value = document.createElement("span");
 								value.className = "custom-rating-value";
 								value.textContent = allocineData.press.toFixed(1);
-
 								ratingItem.appendChild(img);
 								ratingItem.appendChild(value);
 								metaDiv.appendChild(ratingItem);
 							}
-
 							if (allocineData.audience) {
 								const ratingItem = document.createElement("div");
 								ratingItem.className = "custom-rating-item";
-
 								const img = document.createElement("img");
 								img.src = LOGO.allocine_audience;
 								img.alt = "Allociné Spectateurs";
 								img.className = "custom-rating-logo";
 								img.title = `Allociné Spectateurs: ${allocineData.audience.toFixed(1)} / 5`;
-
 								const value = document.createElement("span");
 								value.className = "custom-rating-value";
 								value.textContent = allocineData.audience.toFixed(1);
-
 								ratingItem.appendChild(img);
 								ratingItem.appendChild(value);
 								metaDiv.appendChild(ratingItem);
 							}
 						}
 					}
-					
 				});
 			}
 		} else {
-			
 			if (item.CriticRating !== null && item.CriticRating !== undefined) {
 				const rtRating = document.createElement("div");
 				rtRating.className = "meta-rating-item banner-meta-item";
 				const isFresh = item.CriticRating >= 60;
 				const tomatoImg = isFresh ? 'fresh.png' : 'rotten.png';
-				
 				rtRating.innerHTML = `
 					<img src="modules/mediainfo/${tomatoImg}" class="meta-rating-icon" alt="Rotten Tomatoes">
 					<span class="meta-rating-score">${item.CriticRating}%</span>
 				`;
 				metaDiv.appendChild(rtRating);
 			}
-			
 			if (item.CommunityRating) {
 				const imdbRating = document.createElement("div");
 				imdbRating.className = "meta-rating-item banner-meta-item";

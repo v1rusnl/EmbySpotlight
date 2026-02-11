@@ -22,11 +22,18 @@ A Spotlight banner for Emby Media Server
  3. Set your desired cache duration to store Ratings in Browser in line 69 (to minimize API calls). Cou can manually delete ratings cache in Browsers DevConsole (F12):
  
  ```
+ Complete Cache:
  Object.keys(localStorage)
  .filter(k => k.startsWith('emby_ratings_'))
  .forEach(k => localStorage.removeItem(k));
  console.log('Erased Ratings-Cache');
+ 
+ One item (e.g. TMDb-ID 1399 = Game of Thrones):
+ * Oject.keys(localStorage)
+ * .filter(k => k.startsWith('emby_ratings_') && k.includes('1399'))
+ * .forEach(k => { console.log('Lösche:', k); localStorage.removeItem(k); });
  ```
+ 
  4. For Allociné in general and Rotten Tomatoes "Verified Hot" Badge to work automatically, you need a reliant CORS proxy, e.g. https://github.com/obeone/simple-cors-proxy and you need to set its base URL in line 72. The reasons are that Allociné has no API and the RT "Verified Hot" badge is also present on movies with a Popcornmeter <90 + not available via MDBList API. Also MDBList API does not provide Rating on some older movies for RT. If you do not want a CORS Proxy, you will get no Allociné and missing some RT ratings. Also the automatic RT "Verified Hot" badge will be based on simple math (Popcornmeter >89 + min. 500 verified Ratings). If you choose to use the script without CORS Proxy, you can set manual overrides for false negatives in RT "Cerified Fresh" and "Verified Hot" status by adding the TMDB-ID in line 203 ff. (e.g. an Item should be "Verified Hot" but has a Rating below 90)
  
  
