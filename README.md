@@ -24,13 +24,13 @@ A Spotlight banner for Emby Media Server
  ```
  Complete Cache:
  Object.keys(localStorage)
- .filter(k => k.startsWith('emby_ratings_'))
+ .filter(k => k.startsWith('spotlight_ratings_'))
  .forEach(k => localStorage.removeItem(k));
  console.log('Erased Ratings-Cache');
  
  One item (e.g. TMDb-ID 1399 = Game of Thrones):
  * Oject.keys(localStorage)
- * .filter(k => k.startsWith('emby_ratings_') && k.includes('1399'))
+ * .filter(k => k.startsWith('spotlight_ratings_') && k.includes('1399'))
  * .forEach(k => { console.log('Lösche:', k); localStorage.removeItem(k); });
  ```
  

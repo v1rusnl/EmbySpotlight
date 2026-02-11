@@ -203,7 +203,9 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         globes_nom: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/Globe_Nom.png',
         globes_win: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/Globe_Win.png',
         emmy_nom: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/Emmy_Nom.png',
-        emmy_win: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/Emmy_Win.png'
+        emmy_win: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/Emmy_Win.png',
+		berlinale: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/berlinalebear.png',
+		cannes: 'https://cdn.jsdelivr.net/gh/v1rusnl/EmbySpotlight@main/logo/cannes.png'
     };
     
     // ══════════════════════════════════════════════════════════════════
@@ -1535,6 +1537,156 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 		});
 	}
 
+// ══════════════════════════════════════════════════════════════════
+	// Palme d'Or - Cannes (via Wikidata SPARQL)
+	// Only shows logo if film has won — Q179808
+	// ══════════════════════════════════════════════════════════════════
+
+	function fetchCannesAward(imdbId) {
+		return new Promise((resolve) => {
+			if (!imdbId) {
+				resolve(null);
+				return;
+			}
+
+			const cacheKey = `cannes_award_${imdbId}`;
+			const cached = RatingsCache.get(cacheKey);
+			if (cached !== null) {
+				if (cached.won) {
+					resolve(cached);
+				} else {
+					resolve(null);
+				}
+				return;
+			}
+
+			const sparql = `
+				ASK {
+					?item wdt:P345 "${imdbId}" .
+					?item wdt:P166 wd:Q179808 .
+				}`;
+
+			console.log('[Spotlight] Checking Palme d\'Or for', imdbId);
+
+			GM_xmlhttpRequest({
+				method: 'GET',
+				url: 'https://query.wikidata.org/sparql?format=json&query=' + encodeURIComponent(sparql),
+				headers: {
+					'Accept': 'application/sparql-results+json',
+					'User-Agent': 'EmbySpotlightScript/1.0'
+				},
+				onload(res) {
+					if (res.status !== 200) {
+						console.warn('[Spotlight] Cannes query failed:', res.status);
+						RatingsCache.set(cacheKey, { won: false });
+						resolve(null);
+						return;
+					}
+
+					let json;
+					try {
+						json = JSON.parse(res.responseText);
+					} catch (e) {
+						console.error('[Spotlight] Cannes JSON parse error:', e);
+						RatingsCache.set(cacheKey, { won: false });
+						resolve(null);
+						return;
+					}
+
+					const won = json.boolean === true;
+					RatingsCache.set(cacheKey, { won: won });
+
+					if (won) {
+						console.log(`[Spotlight] 🏆 Palme d'Or gewonnen: ${imdbId}`);
+						resolve({ won: true });
+					} else {
+						resolve(null);
+					}
+				},
+				onerror(err) {
+					console.error('[Spotlight] Cannes request error:', err);
+					RatingsCache.set(cacheKey, { won: false });
+					resolve(null);
+				}
+			});
+		});
+	}
+
+// ══════════════════════════════════════════════════════════════════
+	// Goldener Bär - Berlinale (via Wikidata SPARQL)
+	// Only shows logo if film has won — Q154590
+	// ══════════════════════════════════════════════════════════════════
+
+	function fetchBerlinaleAward(imdbId) {
+		return new Promise((resolve) => {
+			if (!imdbId) {
+				resolve(null);
+				return;
+			}
+
+			const cacheKey = `berlinale_award_${imdbId}`;
+			const cached = RatingsCache.get(cacheKey);
+			if (cached !== null) {
+				if (cached.won) {
+					resolve(cached);
+				} else {
+					resolve(null);
+				}
+				return;
+			}
+
+			const sparql = `
+				ASK {
+					?item wdt:P345 "${imdbId}" .
+					?item wdt:P166 wd:Q154590 .
+				}`;
+
+			console.log('[Spotlight] Checking Goldener Bär for', imdbId);
+
+			GM_xmlhttpRequest({
+				method: 'GET',
+				url: 'https://query.wikidata.org/sparql?format=json&query=' + encodeURIComponent(sparql),
+				headers: {
+					'Accept': 'application/sparql-results+json',
+					'User-Agent': 'EmbySpotlightScript/1.0'
+				},
+				onload(res) {
+					if (res.status !== 200) {
+						console.warn('[Spotlight] Berlinale query failed:', res.status);
+						RatingsCache.set(cacheKey, { won: false });
+						resolve(null);
+						return;
+					}
+
+					let json;
+					try {
+						json = JSON.parse(res.responseText);
+					} catch (e) {
+						console.error('[Spotlight] Berlinale JSON parse error:', e);
+						RatingsCache.set(cacheKey, { won: false });
+						resolve(null);
+						return;
+					}
+
+					const won = json.boolean === true;
+					RatingsCache.set(cacheKey, { won: won });
+
+					if (won) {
+						console.log(`[Spotlight] 🏆 Goldener Bär gewonnen: ${imdbId}`);
+						resolve({ won: true });
+					} else {
+						resolve(null);
+					}
+				},
+				onerror(err) {
+					console.error('[Spotlight] Berlinale request error:', err);
+					RatingsCache.set(cacheKey, { won: false });
+					resolve(null);
+				}
+			});
+		});
+	}
+
 	// ══════════════════════════════════════════════════════════════════
 	// Generic Award Badge Creator (used by Oscars, Golden Globes, Emmys)
 	// Uses nominations - wins for grey statues
@@ -1668,6 +1820,47 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 		});
 	}
 
+	function createBerlinaleBadge() {
+		const container = document.createElement('div');
+		container.className = 'banner-berlinale';
+		container.style.cssText = 'display:flex; align-items:center; gap:0.4rem;';
+
+		// Leading separator dot
+		const separator = document.createElement('span');
+		separator.className = 'banner-berlinale-text banner-berlinale-leading-separator';
+		separator.textContent = '•';
+		container.appendChild(separator);
+
+		const logo = document.createElement('img');
+		logo.src = LOGO.berlinale;
+		logo.alt = 'Goldener Bär (Berlinale)';
+		logo.title = 'Goldener Bär – Berlinale';
+		logo.className = 'banner-berlinale-logo';
+		container.appendChild(logo);
+
+		return container;
+	}
+
+	function createCannesBadge() {
+		const container = document.createElement('div');
+		container.className = 'banner-cannes';
+		container.style.cssText = 'display:flex; align-items:center; gap:0.4rem;';
+
+		// Leading separator dot
+		const separator = document.createElement('span');
+		separator.className = 'banner-cannes-text banner-cannes-leading-separator';
+		separator.textContent = '•';
+		container.appendChild(separator);
+
+		const logo = document.createElement('img');
+		logo.src = LOGO.cannes;
+		logo.alt = "Palme d'Or (Cannes)";
+		logo.title = "Palme d'Or – Festival de Cannes";
+		logo.className = 'banner-cannes-logo';
+		container.appendChild(logo);
+
+		return container;
+	}
    
     // ══════════════════════════════════════════════════════════════════
     // SponsorBlock
@@ -2272,7 +2465,9 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 
         .spotlight .banner-oscars,
         .spotlight .banner-globes,
-        .spotlight .banner-emmys {
+        .spotlight .banner-emmys,
+		.spotlight .banner-berlinale,
+        .spotlight .banner-cannes {
             display: flex;
             align-items: center;
             gap: 0.4rem;
@@ -2280,13 +2475,20 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 
         .banner-oscar-text.banner-oscar-leading-separator,
         .banner-globes-text.banner-globes-leading-separator,
-        .banner-emmy-text.banner-emmy-leading-separator {
+        .banner-emmy-text.banner-emmy-leading-separator,
+		.banner-berlinale-text.banner-berlinale-leading-separator,
+        .banner-cannes-text.banner-cannes-leading-separator	{
             color: rgba(255, 255, 255, 0.5);
+			font-size: clamp(1.1rem, 1.8vw, 1.4rem);
+            font-weight: 500;
+            text-shadow: 1px 1px 4px rgba(0,0,0,0.9);
         }
 
         .spotlight .banner-oscar-logo,
         .spotlight .banner-globes-logo,
-        .spotlight .banner-emmy-logo {
+        .spotlight .banner-emmy-logo,
+        .spotlight .banner-berlinale-logo,
+        .spotlight .banner-cannes-logo {
             height: clamp(1.1rem, 1.8vw, 1.4rem);
             width: auto;
             object-fit: contain;
@@ -2294,15 +2496,6 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             margin-bottom: 3px;
             margin-right: 5px;
             margin-left: 9px;
-        }
-
-        .spotlight .banner-oscar-text,
-        .spotlight .banner-globes-text,
-        .spotlight .banner-emmy-text {
-            font-size: clamp(1.1rem, 1.8vw, 1.4rem);
-            font-weight: 500;
-            text-shadow: 1px 1px 4px rgba(0,0,0,0.9);
-            margin-left: -8px;
         }
 
         /* ═══════════════════════════════════════════════════ */
@@ -2794,6 +2987,16 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 		const emmyPlaceholder = document.createElement("div");
 		emmyPlaceholder.className = "banner-emmys-placeholder";
 		genresRow.appendChild(emmyPlaceholder);
+
+		// Berlinale-Platzhalter (wird async befüllt)
+		const berlinalePlaceholder = document.createElement("div");
+		berlinalePlaceholder.className = "banner-berlinale-placeholder";
+		genresRow.appendChild(berlinalePlaceholder);
+
+		// Cannes-Platzhalter (wird async befüllt)
+		const cannesPlaceholder = document.createElement("div");
+		cannesPlaceholder.className = "banner-cannes-placeholder";
+		genresRow.appendChild(cannesPlaceholder);
 		
 		infoContainer.appendChild(genresRow);
 		
@@ -2832,10 +3035,35 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 					emmyPlaceholder.remove();
 				}
 			});
+			
+			// Goldener Bär (Berlinale)
+			fetchBerlinaleAward(imdbId).then(berlinaleData => {
+				if (berlinaleData && berlinaleData.won) {
+					const berlinaleBadge = createBerlinaleBadge();
+					berlinalePlaceholder.replaceWith(berlinaleBadge);
+					console.log(`[Spotlight] 🏆 Goldener Bär für ${item.Name}`);
+				} else {
+					berlinalePlaceholder.remove();
+				}
+			});
+
+			// Palme d'Or (Cannes)
+			fetchCannesAward(imdbId).then(cannesData => {
+				if (cannesData && cannesData.won) {
+					const cannesBadge = createCannesBadge();
+					cannesPlaceholder.replaceWith(cannesBadge);
+					console.log(`[Spotlight] 🏆 Palme d'Or für ${item.Name}`);
+				} else {
+					cannesPlaceholder.remove();
+				}
+			});
+			
 		} else {
 			oscarPlaceholder.remove();
 			globesPlaceholder.remove();
 			emmyPlaceholder.remove();
+			berlinalePlaceholder.remove();
+			cannesPlaceholder.remove();
 		}
 		
 		const metaDiv = document.createElement("div");
