@@ -29,7 +29,7 @@ A Spotlight banner for Emby Media Server
  console.log('Erased Ratings-Cache');
  
  One item (e.g. TMDb-ID 1399 = Game of Thrones):
- Oject.keys(localStorage)
+ Object.keys(localStorage)
  .filter(k => k.startsWith('spotlight_ratings_') && k.includes('1399'))
  .forEach(k => { console.log('Lösche:', k); localStorage.removeItem(k); });
  ```
@@ -87,8 +87,7 @@ HEX: "#0000000" -> Emby Themes: Dark = #1e1e1e; Black = #000000; Light = #ffffff
 
  4. Paste modified Spotlight.js (and optional spotlight-items.txt) inside /system/dashboard-ui/ (Windows) or your OS equivalent
  
- 5. Add ```<script src="Spotlight.js"></script>``` before ```</body>``` tag at the end of /system/dashboard-ui/index.html
-<img width="429" height="81" alt="Screenshot 2025-10-05 155428" src="https://github.com/user-attachments/assets/10f18d01-a610-45b4-bb79-7c895204023d" />
+ 5. Add ```<script src="Spotlight.js" defer></script>``` before ```</body>``` tag at the end of /system/dashboard-ui/index.html
  
  6. Hard reload Emby Web
 
