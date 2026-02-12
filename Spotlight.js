@@ -1,6 +1,6 @@
 /*!
  * Spotlight.js — Emby 4.9 compatible Spotlight slider with Video Backdrop Support & Custom Ratings
- * Enhanced with: YouTube Trailers, HTML5 Video, SponsorBlock, Custom Ratings (IMDb, RT, Metacritic, etc.), Oscar + Emmy + Globes Wins+Nominations
+ * Enhanced with: YouTube Trailers, HTML5 Video, SponsorBlock, Custom Ratings (IMDb, RT, Metacritic, etc.), Oscar + Emmy + Globes + Cannes + Berlinale Wins+Nominations
  * localStorage-based caching for all ratings
  * RT Scraping for Certified Fresh & Verified Hot badges
  * RT Direct Scraping fallback when MDBList has no RT data
