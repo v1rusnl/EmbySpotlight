@@ -4,18 +4,22 @@
  * localStorage-based caching for all ratings
  * RT Scraping for Certified Fresh & Verified Hot badges
  * RT Direct Scraping fallback when MDBList has no RT data
- * Generated: 2026-02-11
+ * Generated: 2026-02-13
  *
  * CORS PROXY (optional):
- * - Without: Most ratings work via MDBList API
- * - With: Enables RT fallback scraping, exact Certified/Verified badges, and Allociné
- * - Set CORS_PROXY_URL in CONFIG (leave empty '' to disable)
+ * - Without CORS: All Ratings work via MDBList or Wikidata and GraphQL API (except Allociné), RT Certified/Verified badges might not be correct sometimes
+ * - With CORS: Enables RT fallback scraping for old movies with MDBList API rating "null" + exact Certified/Verified badges + Allociné Ratings
  *
  * Manually delete ratings cache in Browsers DevConsole (F12):
  * Object.keys(localStorage)
  * .filter(k => k.startsWith('spotlight_ratings_'))
  * .forEach(k => localStorage.removeItem(k));
  * console.log('Ratings-Cache gelöscht');
+ *
+ * Manually delete ratings cache in Browsers DevConsole (F12) for one TMDb-ID (e.g. 1399 = Game of Thrones):
+ * Object.keys(localStorage)
+ * .filter(k => k.startsWith('spotlight_ratings_') && k.includes('1399'))
+ * .forEach(k => { console.log('Lösche:', k); localStorage.removeItem(k); });
  */
 
 if (typeof GM_xmlhttpRequest === 'undefined') {
@@ -39,9 +43,16 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 
 (function () {
     'use strict';
-    
+
+    // ══════════════════════════════════════════════════════════════════
+    // CONFIGURATION
+    // ══════════════════════════════════════════════════════════════════    
     const CONFIG = {
         imageWidth: 1900,
+		
+		// ══════════════════════════════════════════════════════════════════
+		// SPOTLIGHT CONTAINER SETTINGS
+		// ══════════════════════════════════════════════════════════════════
         limit: 10,
         autoplayInterval: 10000,
         vignetteColorTop:    "#1e1e1e",
@@ -60,17 +71,123 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         
         enableSponsorBlock: true, // Sponsorblock extension needs to be installed on the client
         sponsorBlockCategories: ["sponsor", "intro", "outro", "selfpromo", "interaction", "preview"],
-        
-        // Custom Ratings Config
-        enableCustomRatings: true,
+
+		// ══════════════════════════════════════════════════════════════════
+		// API KEYS
+		// ══════════════════════════════════════════════════════════════════
         MDBLIST_API_KEY: '', // API Key from https://mdblist.com/
         TMDB_API_KEY: '', // API Key from https://www.themoviedb.org/
         KINOPOISK_API_KEY: '', // API key from https://kinopoiskapiunofficial.tech/
+        
+		// ══════════════════════════════════════════════════════════════════
+		// CUSTOM RATINGS CONFIG
+		// ══════════════════════════════════════════════════════════════════
+		enableCustomRatings: true,
+		
+		// ══════════════════════════════════════════════════════════════════
+		// INDIVIDUAL RATING PROVIDERS (true = enabled, false = disabled)
+		// ══════════════════════════════════════════════════════════════════
+		enableIMDb: true,
+		enableTMDb: true,
+		enableRottenTomatoes: true,      // Critics & Audience Scores
+		enableMetacritic: true,          // Critics & User Scores
+		enableTrakt: true,
+		enableLetterboxd: true,
+		enableRogerEbert: true,
+		enableAllocine: true,            // French Presse & Spectateurs Scores
+		enableKinopoisk: true,           // Russian Score
+		enableMyAnimeList: true,
+		enableAniList: true, 
+		
+		// ══════════════════════════════════════════════════════════════════
+		// RATINGS CACHE
+		// ══════════════════════════════════════════════════════════════════
         CACHE_TTL_HOURS: 168, // Cache duration in Hours
         
-        // CORS Proxy URL für RT und Allociné Scraping (leer lassen wenn nicht verfügbar)
+		// ══════════════════════════════════════════════════════════════════
+		// CORS PROXY - RT und Allociné Scraping (leave empty without proxy)
+		// ══════════════════════════════════════════════════════════════════
         CORS_PROXY_URL: '' // e.g. 'https://cors.yourdomain.com/proxy/'
     };
+
+	// ══════════════════════════════════════════════════════════════════
+	// RATING PROVIDER CHECK FUNCTION
+	// ══════════════════════════════════════════════════════════════════
+
+	function isRatingProviderEnabled(source) {
+		if (!CONFIG.enableCustomRatings) return false;
+		
+		const key = source.toLowerCase().replace(/\s+/g, '_');
+		
+		// IMDb
+		if (key === 'imdb') {
+			return CONFIG.enableIMDb;
+		}
+		
+		// TMDb
+		if (key === 'tmdb') {
+			return CONFIG.enableTMDb;
+		}
+		
+		// Rotten Tomatoes (Critics & Audience)
+		if (key === 'tomatoes' || 
+			key === 'tomatoes_rotten' || 
+			key === 'tomatoes_certified' ||
+			key.includes('popcorn') || 
+			key.includes('audience') ||
+			key === 'rotten_ver') {
+			return CONFIG.enableRottenTomatoes;
+		}
+		
+		// Metacritic (Critics & User)
+		if (key === 'metacritic' || 
+			key === 'metacriticms' || 
+			key === 'metacriticus' ||
+			key.includes('metacritic')) {
+			return CONFIG.enableMetacritic;
+		}
+		
+		// Trakt
+		if (key === 'trakt') {
+			return CONFIG.enableTrakt;
+		}
+		
+		// Letterboxd
+		if (key === 'letterboxd') {
+			return CONFIG.enableLetterboxd;
+		}
+		
+		// Roger Ebert
+		if (key === 'rogerebert' || key === 'roger_ebert') {
+			return CONFIG.enableRogerEbert;
+		}
+		
+		// Allociné
+		if (key === 'allocine' || 
+			key === 'allocine_critics' || 
+			key === 'allocine_audience') {
+			return CONFIG.enableAllocine;
+		}
+		
+		// Kinopoisk
+		if (key === 'kinopoisk') {
+			return CONFIG.enableKinopoisk;
+		}
+		
+		// MyAnimeList
+		if (key === 'myanimelist' || key === 'mal') {
+			return CONFIG.enableMyAnimeList;
+		}
+		
+		// AniList
+		if (key === 'anilist') {
+			return CONFIG.enableAniList;
+		}
+		
+		// Default: aktiviert für unbekannte Provider
+		return true;
+	}
+
     
     // ══════════════════════════════════════════════════════════════════
     // CACHE KONFIGURATION
@@ -740,6 +857,14 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                             if (r.value == null) return;
                             
                             let key = r.source.toLowerCase().replace(/\s+/g, '_');
+							
+							// ══════════════════════════════════════════════════════════════════
+							// PRÜFE OB PROVIDER AKTIVIERT IST
+							// ══════════════════════════════════════════════════════════════════
+							if (!isRatingProviderEnabled(key)) {
+								return; // Provider deaktiviert, überspringe dieses Rating
+							}
+							
                             let isCriticsBadge = false;
                             let isAudienceBadge = false;
                             
@@ -2813,7 +2938,11 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             IncludeItemTypes: "Movie,Series",
             Recursive: true,
             Limit: 100,
-            SortBy: "PremiereDate,ProductionYear,CriticRating",
+			IsPlayed: false,
+			// Years: "2020,2021,2022,2023,2024,2025,2026",
+			// MinPremiereDate: "2020-01-01",
+			// MaxPremiereDate: "2024-12-31",
+            SortBy: "PremiereDate,ProductionYear,CriticRating", // e.g. "Random"
             SortOrder: "Descending",
             EnableImageTypes: "Primary,Backdrop,Thumb,Logo,Banner",
             EnableUserData: false,
@@ -3116,7 +3245,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 					});
 					
 					// RT FALLBACK
-					if (!hasRTFromMDBList && imdbId) {
+					if (!hasRTFromMDBList && imdbId && CONFIG.enableRottenTomatoes) {
 						console.log('[Spotlight] MDBList hat keine RT-Daten für', item.Name, '- scrape direkt von RT');
 						const rtDirect = await fetchRottenTomatoesDirectly(imdbId, type);
 						
@@ -3160,7 +3289,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 						}
 					}
 					// RT UPGRADE
-					else if (hasRTFromMDBList && imdbId) {
+					else if (hasRTFromMDBList && imdbId && CONFIG.enableRottenTomatoes) {
 						const tomatoesScore = ratingsData._tomatoesScore;
 						const audienceScore = ratingsData._audienceScore;
 						
@@ -3210,7 +3339,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 					}
 					
 					// AniList
-					if (imdbId) {
+					if (imdbId && CONFIG.enableAniList) {
 						const anilistRating = await fetchAniListRating(imdbId, ratingsData.originalTitle, ratingsData.year);
 						if (anilistRating && anilistRating.score) {
 							const ratingItem = document.createElement("div");
@@ -3230,7 +3359,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 					}
 
 					// Kinopoisk
-					if (ratingsData.originalTitle && ratingsData.year) {
+					if (ratingsData.originalTitle && ratingsData.year && CONFIG.enableKinopoisk) {
 						const kpRating = await fetchKinopoiskRating(ratingsData.originalTitle, parseInt(ratingsData.year, 10), type);
 						if (kpRating && kpRating.score) {
 							const ratingItem = document.createElement("div");
@@ -3250,7 +3379,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 					}
 					
 					// Allociné
-					if (imdbId) {
+					if (imdbId && CONFIG.enableAllocine) {
 						const allocineData = await fetchAllocineRatings(imdbId, type);
 						if (allocineData) {
 							if (allocineData.press) {

@@ -17,27 +17,13 @@ A Spotlight banner for Emby Media Server
 
  1. Download [Spotlight.js](https://github.com/v1rusnl/EmbySpotlight/blob/main/Spotlight.js) and optionally [spotlight-items.txt](https://github.com/v1rusnl/EmbySpotlight/blob/main/spotlight-items.txt), if you want to decide which items you want to present to users
  
- 2. Enable enableCustomRatings and set up your MDBLIST_API_KEY, TMDB_API_KEY and KINOPOISK_API_KEY in line 65-68 -> The keys are needed for the custom ratings, min. MDBList key is mandatory
+ 2. Fill out Confguration (line 53-110)
+ - Paste your API keys -  min. MDBList key is mandatory to get most ratings (except Allocine); if no key is used, leave the value field empty
+ - Enable the Rating providers you'd like to see
+ - Set Ratings cache duration to minimize API calls and instant Rating load time when revisiting items -> default=168h (1 Week)
+ - For Allociné in general and Rotten Tomatoes "Verified Hot" Badge to work automatically, you need a reliant CORS proxy, e.g. https://github.com/obeone/simple-cors-proxy and you need to set its base URL in line 72. The reasons are that Allociné has no API and the RT "Verified Hot" badge is also present on movies with a Popcornmeter <90 + not available via MDBList API. Also MDBList API does not provide Rating on some older movies for RT. If you do not want a CORS Proxy, you will get no Allociné and missing some RT ratings. Also the automatic RT "Verified Hot" badge will be based on simple math (Popcornmeter >89 + min. 500 verified Ratings). If you choose to use the script without CORS Proxy, you can set manual overrides for false negatives in RT "Cerified Fresh" and "Verified Hot" status by adding the TMDB-ID in line 328 ff. (e.g. an Item should be "Verified Hot" but has a Rating below 90)
  
- 3. Set your desired cache duration to store Ratings in Browser in line 69 (to minimize API calls). Cou can manually delete ratings cache in Browsers DevConsole (F12):
- 
- ```
- Complete Cache:
- Object.keys(localStorage)
- .filter(k => k.startsWith('spotlight_ratings_'))
- .forEach(k => localStorage.removeItem(k));
- console.log('Erased Ratings-Cache');
- 
- One item (e.g. TMDb-ID 1399 = Game of Thrones):
- Object.keys(localStorage)
- .filter(k => k.startsWith('spotlight_ratings_') && k.includes('1399'))
- .forEach(k => { console.log('Lösche:', k); localStorage.removeItem(k); });
- ```
- 
- 4. For Allociné in general and Rotten Tomatoes "Verified Hot" Badge to work automatically, you need a reliant CORS proxy, e.g. https://github.com/obeone/simple-cors-proxy and you need to set its base URL in line 72. The reasons are that Allociné has no API and the RT "Verified Hot" badge is also present on movies with a Popcornmeter <90 + not available via MDBList API. Also MDBList API does not provide Rating on some older movies for RT. If you do not want a CORS Proxy, you will get no Allociné and missing some RT ratings. Also the automatic RT "Verified Hot" badge will be based on simple math (Popcornmeter >89 + min. 500 verified Ratings). If you choose to use the script without CORS Proxy, you can set manual overrides for false negatives in RT "Cerified Fresh" and "Verified Hot" status by adding the TMDB-ID in line 203 ff. (e.g. an Item should be "Verified Hot" but has a Rating below 90)
- 
- 
- 3. Change the following values (line 45-61) to your needs:
+ 3. Change the other visual configuration values to your needs:
  
  - limit: The amount of items from 100 latest the plugin shows in Spotlight in random order
  
@@ -82,7 +68,7 @@ HEX: "#0000000" -> Emby Themes: Dark = #1e1e1e; Black = #000000; Light = #ffffff
  
  - enableSponsorBlock: true|false -> Enable SponsorBlock api; NOTE: You need to have installed the Sponsorblock browser extension
  
- 3. Optional: Add IDs of the items you want to present into spotlight-items.txt like this (nested IDs like Collection supported):
+ 3. Optional: Add IDs of the items you want to present into spotlight-items.txt like this (nested IDs like Collectiond are supported):
  <img width="326" height="155" alt="image" src="https://github.com/user-attachments/assets/6f48bf50-7477-4378-af0c-6f4f1f9064ee" />
 
  4. Paste modified Spotlight.js (and optional spotlight-items.txt) inside /system/dashboard-ui/ (Windows) or your OS equivalent
