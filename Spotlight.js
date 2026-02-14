@@ -1307,8 +1307,8 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             Recursive: true,
             Limit: 100,
             IsPlayed: false,
-            Years: "2020,2021,2022,2023,2024,2025,2026",
-            SortBy: "Random",
+            //Years: "2020,2021,2022,2023,2024,2025,2026",
+            SortBy: "PremiereDate,ProductionYear,CriticRating", //Random
             SortOrder: "Descending",
             EnableImageTypes: "Primary,Backdrop,Thumb,Logo,Banner",
             EnableUserData: false,
