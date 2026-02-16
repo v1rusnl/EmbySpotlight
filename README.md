@@ -17,7 +17,7 @@ A Spotlight banner for Emby Media Server
 
  1. Download [Spotlight.js](https://github.com/v1rusnl/EmbySpotlight/blob/main/Spotlight.js) and optionally [spotlight-items.txt](https://github.com/v1rusnl/EmbySpotlight/blob/main/spotlight-items.txt), if you want to decide which items you want to present to users
  
- 2. Fill out Confguration (line 56-110)
+ 2. Fill out Confguration (line 56-129)
  - Paste your API keys -  min. MDBList key is mandatory to get most ratings (except Allocine); if no key is used, leave the value field empty
  - Enable the Rating providers you'd like to see
  - Set Ratings cache duration to minimize API calls and instant Rating load time when revisiting items -> default=168h (1 Week)
