@@ -68,6 +68,8 @@ HEX: "#0000000" -> Emby Themes: Dark = #1e1e1e; Black = #000000; Light = #ffffff
  
  - enableSponsorBlock: true|false -> Enable SponsorBlock api; NOTE: You need to have installed the Sponsorblock browser extension
  
+ - RATING_COLORS: change the background color for age ratings
+ 
  3. Optional: Add IDs of the items you want to present into spotlight-items.txt like this (nested IDs like Collectiond are supported):
  <img width="326" height="155" alt="image" src="https://github.com/user-attachments/assets/6f48bf50-7477-4378-af0c-6f4f1f9064ee" />
 
