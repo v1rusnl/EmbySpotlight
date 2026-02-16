@@ -1168,20 +1168,49 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             isGold ? "Leone d'Oro – Venice Film Festival" : 'Gran Premio della Giuria – Venice Film Festival',
             'banner-venezia');
     }
-   
-    // ══════════════════════════════════════════════════════════════════
-    // SponsorBlock
-    // ══════════════════════════════════════════════════════════════════
 
-    async function fetchSponsorBlockSegments(videoId) {
-        if (!CONFIG.enableSponsorBlock || !videoId) return [];
-        try {
-            const categories = CONFIG.sponsorBlockCategories.map(c => `"${c}"`).join(',');
-            const response = await fetch(`https://sponsor.ajay.app/api/skipSegments?videoID=${videoId}&categories=[${categories}]`);
-            if (!response.ok) return [];
-            return await response.json() || [];
-        } catch { return []; }
-    }
+	// ══════════════════════════════════════════════════════════════════
+	// SponsorBlock — CORS-safe
+	// ══════════════════════════════════════════════════════════════════
+
+	async function fetchSponsorBlockSegments(videoId) {
+		if (!CONFIG.enableSponsorBlock || !videoId) return [];
+
+		const categories = CONFIG.sponsorBlockCategories.map(c => `"${c}"`).join(',');
+		const url = `https://sponsor.ajay.app/api/skipSegments?videoID=${videoId}&categories=[${categories}]`;
+
+		// Prefer GM_xmlhttpRequest to bypass CORS
+		if (typeof GM_xmlhttpRequest === 'function' || 
+			(typeof GM !== 'undefined' && GM.xmlHttpRequest)) {
+			
+			return new Promise((resolve) => {
+				const gmXhr = (typeof GM !== 'undefined' && GM.xmlHttpRequest) 
+							  ? GM.xmlHttpRequest 
+							  : GM_xmlhttpRequest;
+				gmXhr({
+					method: 'GET',
+					url: url,
+					onload: (response) => {
+						if (response.status === 200) {
+							try {
+								resolve(JSON.parse(response.responseText) || []);
+							} catch { resolve([]); }
+						} else {
+							resolve([]); // 404 = no segments, 502 = server error
+						}
+					},
+					onerror: () => resolve([])
+				});
+			});
+		}
+
+		// Fallback: normal fetch (may fail with CORS)
+		try {
+			const response = await fetch(url);
+			if (!response.ok) return [];
+			return await response.json() || [];
+		} catch { return []; }
+	}
     
     function startSponsorBlockMonitoring(player, videoId, itemId) {
         if (!CONFIG.enableSponsorBlock || STATE.skipIntervals[itemId]) return;
@@ -1385,8 +1414,8 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             Recursive: true,
             Limit: 100,
             IsPlayed: false,
-            //Years: "2020,2021,2022,2023,2024,2025,2026",
-            SortBy: "PremiereDate,ProductionYear,CriticRating", // Random
+            Years: "2020,2021,2022,2023,2024,2025,2026",
+            SortBy: "Random",
             SortOrder: "Descending",
             EnableImageTypes: "Primary,Backdrop,Thumb,Logo,Banner",
             EnableUserData: false,
@@ -2142,43 +2171,69 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         if (videoId) console.log(`[Spotlight] Trailer: ${itemName} -> https://www.youtube.com/watch?v=${videoId}`);
     }
     
-    function playCurrentSlideVideo(itemId) {
-        let player = STATE.videoPlayers[itemId];
-        
-        if (!player && STATE.currentSlider) {
-            const currentSlide = STATE.currentSlider.children[STATE.currentSlideIndex];
-            const ytContainer = currentSlide?.querySelector('.youtube-backdrop[data-item-id="' + itemId + '"]');
-            if (ytContainer) {
-                const playerId = ytContainer.id;
-                player = STATE.videoPlayers[playerId];
-                if (!player && window.YT?.get) {
-                    player = window.YT.get(playerId);
-                    if (player) STATE.videoPlayers[playerId] = player;
-                }
-            }
-            const videoElement = currentSlide?.querySelector(`video.video-backdrop[data-item-id="${itemId}"]`);
-            if (videoElement) { player = videoElement; STATE.videoPlayers[itemId] = player; }
-            if (!player) return;
-        }
-        
-        if (player?.playVideo) {
-            const currentSlide = STATE.currentSlider?.children[STATE.currentSlideIndex];
-            const itemName = currentSlide?.querySelector('.banner-title')?.textContent || currentSlide?.querySelector('.banner-logo')?.alt || '';
-            logYouTubeURL(player._videoId, itemName);
-            if (STATE.isMuted) player.mute();
-            else { player.unMute(); player.setVolume(CONFIG.videoVolume * 100); }
-            player.playVideo();
-            STATE.isPaused = false;
-            updatePauseButtonIcon();
-        } else if (player?.play) {
-            player.currentTime = 0;
-            player.muted = STATE.isMuted;
-            if (!STATE.isMuted) player.volume = CONFIG.videoVolume;
-            player.play().catch(() => { player.muted = true; STATE.isMuted = true; updateMuteButtonIcon(); player.play(); });
-            STATE.isPaused = false;
-            updatePauseButtonIcon();
-        }
-    }
+	function playCurrentSlideVideo(itemId) {
+		let player = STATE.videoPlayers[itemId];
+
+		if (!player && STATE.currentSlider) {
+			const currentSlide = STATE.currentSlider.children[STATE.currentSlideIndex];
+			const ytContainer = currentSlide?.querySelector(
+				'.youtube-backdrop[data-item-id="' + itemId + '"]'
+			);
+			if (ytContainer) {
+				const playerId = ytContainer.id;
+				player = STATE.videoPlayers[playerId];
+				if (!player && window.YT?.get) {
+					player = window.YT.get(playerId);
+					if (player) STATE.videoPlayers[playerId] = player;
+				}
+			}
+			const videoElement = currentSlide?.querySelector(
+				`video.video-backdrop[data-item-id="${itemId}"]`
+			);
+			if (videoElement) {
+				player = videoElement;
+				STATE.videoPlayers[itemId] = player;
+			}
+			if (!player) return;
+		}
+
+		if (player?.playVideo) {
+			// ═══ FIX: Restart wenn Video beendet war ═══
+			try {
+				const state = player.getPlayerState();
+				if (state === YT.PlayerState.ENDED) {
+					console.log(`[Spotlight] Video beendet, starte neu: ${itemId}`);
+					player.seekTo(0, true);
+				}
+			} catch (e) { /* Player noch nicht ready */ }
+			// ═══════════════════════════════════════════
+
+			const currentSlide = STATE.currentSlider?.children[STATE.currentSlideIndex];
+			const itemName = currentSlide?.querySelector('.banner-title')?.textContent 
+						  || currentSlide?.querySelector('.banner-logo')?.alt || '';
+			logYouTubeURL(player._videoId, itemName);
+
+			if (STATE.isMuted) player.mute();
+			else { player.unMute(); player.setVolume(CONFIG.videoVolume * 100); }
+
+			player.playVideo();
+			STATE.isPaused = false;
+			updatePauseButtonIcon();
+
+		} else if (player?.play) {
+			player.currentTime = 0;  // HTML5 Video startet immer von vorne
+			player.muted = STATE.isMuted;
+			if (!STATE.isMuted) player.volume = CONFIG.videoVolume;
+			player.play().catch(() => {
+				player.muted = true;
+				STATE.isMuted = true;
+				updateMuteButtonIcon();
+				player.play();
+			});
+			STATE.isPaused = false;
+			updatePauseButtonIcon();
+		}
+	}
     
     function pauseAllVideos() {
         Object.entries(STATE.videoPlayers).forEach(([itemId, player]) => {
@@ -2345,49 +2400,46 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         window.addEventListener("resize", resizeHandler);
         
         // Initial setup
-        setTimeout(() => {
-            updateTransform(currentIndex, false);
-            setActiveDot(currentIndex);
-            triggerZoomAnimation();
-            updateVideoButtonsVisibility();
-            STATE.currentSlideIndex = currentIndex;
-            
-            // LAZY: Enrich first slide + neighbors
-            enrichNearbySlides(currentIndex, slider, items, itemsCount);
-            
-            // Setup video for first slide
-            const firstItem = slider.children[currentIndex];
-            if (firstItem?.dataset.hasVideo === 'true') {
-                const itemId = firstItem.dataset.itemId;
-                const item = items.find(it => it.Id === itemId);
-                if (item) {
-                    setupVideoForSlide(firstItem, item, apiClient, true).then(() => {
-                        if (STATE.youtubeAPIReady) initializeYouTubePlayers(slider);
-                        
-                        const tryPlay = (attempts = 0) => {
-                            const player = STATE.videoPlayers[itemId];
-                            if (!player && attempts < 40) {
-                                setTimeout(() => tryPlay(attempts + 1), 300);
-                                return;
-                            }
-                            if (player?.getPlayerState) {
-                                const s = player.getPlayerState();
-                                if (s === YT.PlayerState.UNSTARTED || s === YT.PlayerState.CUED) {
-                                    setTimeout(() => playCurrentSlideVideo(itemId), 800);
-                                } else if (s === -1 && attempts < 40) {
-                                    setTimeout(() => tryPlay(attempts + 1), 300);
-                                } else if (s !== -1) {
-                                    playCurrentSlideVideo(itemId);
-                                }
-                            } else if (player?.tagName === 'VIDEO') {
-                                playCurrentSlideVideo(itemId);
-                            }
-                        };
-                        setTimeout(() => tryPlay(), 1500);
-                    });
-                }
-            }
-        }, 100);
+		setTimeout(() => {
+			updateTransform(currentIndex, false);
+			setActiveDot(currentIndex);
+			triggerZoomAnimation();
+			updateVideoButtonsVisibility();
+			STATE.currentSlideIndex = currentIndex;
+
+			enrichNearbySlides(currentIndex, slider, items, itemsCount);
+
+			const firstItem = slider.children[currentIndex];
+			if (firstItem?.dataset.hasVideo === 'true') {
+				const itemId = firstItem.dataset.itemId;
+				const item = items.find(it => it.Id === itemId);
+				if (item) {
+					setupVideoForSlide(firstItem, item, apiClient, true).then(() => {
+						
+						const tryPlay = (attempts = 0) => {
+							const player = STATE.videoPlayers[itemId];
+							if (!player && attempts < 40) {
+								setTimeout(() => tryPlay(attempts + 1), 300);
+								return;
+							}
+							if (player?.getPlayerState) {
+								const s = player.getPlayerState();
+								if (s === YT.PlayerState.UNSTARTED || s === YT.PlayerState.CUED) {
+									setTimeout(() => playCurrentSlideVideo(itemId), 800);
+								} else if (s === -1 && attempts < 40) {
+									setTimeout(() => tryPlay(attempts + 1), 300);
+								} else if (s !== -1) {
+									playCurrentSlideVideo(itemId);
+								}
+							} else if (player?.tagName === 'VIDEO') {
+								playCurrentSlideVideo(itemId);
+							}
+						};
+						setTimeout(() => tryPlay(), 1500);
+					});
+				}
+			}
+		}, 100);
         
         btnRight.addEventListener("click", (e) => { e.stopPropagation(); currentIndex++; animate(); });
         btnLeft.addEventListener("click", (e) => { e.stopPropagation(); currentIndex--; animate(); });
@@ -2402,41 +2454,58 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             }
         });
         
-        function handleVideoPlayback() {
-            STATE.isPaused = false;
-            updatePauseButtonIcon();
-            pauseAllVideos();
-            updateVideoButtonsVisibility();
-            STATE.currentSlideIndex = currentIndex;
-            
-            // LAZY: Enrich slides when they become visible
-            enrichNearbySlides(currentIndex, slider, items, itemsCount);
-            
-            const visibleItem = slider.children[currentIndex];
-            const hasVideo = visibleItem?.dataset.hasVideo === 'true';
-            
-            if (CONFIG.waitForTrailerToEnd && hasVideo) stopAutoplay();
-            else startAutoplay();
-            
-            if (hasVideo) {
-                const itemId = visibleItem.dataset.itemId;
-                const item = items.find(it => it.Id === itemId);
-                
-                // Setup video if not done yet
-                if (item && visibleItem.dataset.videoSetup !== 'true') {
-                    setupVideoForSlide(visibleItem, item, apiClient, false).then(() => {
-                        if (STATE.youtubeAPIReady) initializeYouTubePlayers(slider);
-                        setTimeout(() => {
-                            ensurePlayerForCurrentSlide(currentIndex, slider);
-                            if (itemId) playCurrentSlideVideo(itemId);
-                        }, 500);
-                    });
-                } else {
-                    ensurePlayerForCurrentSlide(currentIndex, slider);
-                    if (itemId) setTimeout(() => playCurrentSlideVideo(itemId), 300);
-                }
-            }
-        }
+		function handleVideoPlayback() {
+			STATE.isPaused = false;
+			updatePauseButtonIcon();
+			pauseAllVideos();
+			updateVideoButtonsVisibility();
+			STATE.currentSlideIndex = currentIndex;
+
+			enrichNearbySlides(currentIndex, slider, items, itemsCount);
+
+			const visibleItem = slider.children[currentIndex];
+			const hasVideo = visibleItem?.dataset.hasVideo === 'true';
+
+			if (CONFIG.waitForTrailerToEnd && hasVideo) stopAutoplay();
+			else startAutoplay();
+
+			if (hasVideo) {
+				const itemId = visibleItem.dataset.itemId;
+				const item = items.find(it => it.Id === itemId);
+				
+				const savedIndex = currentIndex; 
+				const tryPlay = (attempts = 0) => {
+					if (STATE.currentSlideIndex !== savedIndex) return;
+					
+					const player = STATE.videoPlayers[itemId];
+					if (!player && attempts < 40) {
+						setTimeout(() => tryPlay(attempts + 1), 300);
+						return;
+					}
+					if (player?.getPlayerState) {
+						const s = player.getPlayerState();
+						if (s === YT.PlayerState.UNSTARTED || s === YT.PlayerState.CUED) {
+							setTimeout(() => playCurrentSlideVideo(itemId), 500);
+						} else if (s === -1 && attempts < 40) {
+							setTimeout(() => tryPlay(attempts + 1), 300);
+						} else if (s !== -1) {
+							playCurrentSlideVideo(itemId);
+						}
+					} else if (player?.tagName === 'VIDEO') {
+						playCurrentSlideVideo(itemId);
+					}
+				};
+
+				if (item && visibleItem.dataset.videoSetup !== 'true') {
+					setupVideoForSlide(visibleItem, item, apiClient, false).then(() => {
+						setTimeout(() => tryPlay(), 500);
+					});
+				} else {
+					ensurePlayerForCurrentSlide(currentIndex, slider);
+					setTimeout(() => tryPlay(), 300);
+				}
+			}
+		}
         
         function animate() {
             pauseAllVideos();
