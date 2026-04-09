@@ -1372,12 +1372,17 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         .spotlight .mute-button:hover{transform:scale(1.02);background:${playbuttonColor};box-shadow:0 6px 20px rgba(0,0,0,0.5)}
         .spotlight .mute-button svg{width:24px;height:24px;fill:#fff;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.3));transition:filter .3s ease}
         .spotlight .mute-button:hover svg{filter:drop-shadow(0 3px 6px rgba(0,0,0,0.5))}
-        .spotlight .refresh-button{position:absolute;bottom:12rem;right:2rem;z-index:25;width:50px;height:50px;border-radius:50%;background:rgba(55,55,55,0.3);border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .3s ease;box-shadow:0 4px 12px rgba(0,0,0,0.4);opacity:0;pointer-events:none}
+        .spotlight .refresh-button{position:absolute;bottom:16rem;right:2rem;z-index:25;width:50px;height:50px;border-radius:50%;background:rgba(55,55,55,0.3);border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .3s ease;box-shadow:0 4px 12px rgba(0,0,0,0.4);opacity:0;pointer-events:none}
         .spotlight-container:hover .refresh-button.visible{opacity:1;pointer-events:all}
         .spotlight .refresh-button:hover{transform:scale(1.02) rotate(180deg);background:${playbuttonColor};box-shadow:0 6px 20px rgba(0,0,0,0.5)}
         .spotlight .refresh-button svg{width:24px;height:24px;fill:#fff;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.3));transition:filter .3s ease}
         .spotlight .refresh-button:hover svg{filter:drop-shadow(0 3px 6px rgba(0,0,0,0.5))}
         .spotlight .refresh-button.refreshing{animation:spin 1s linear infinite}
+		.spotlight .autoplay-button{position:absolute;bottom:12rem;right:2rem;z-index:25;width:50px;height:50px;border-radius:50%;background:rgba(55,55,55,0.3);border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .3s ease;box-shadow:0 4px 12px rgba(0,0,0,0.4);opacity:0;pointer-events:none}
+		.spotlight-container:hover .autoplay-button.visible{opacity:1;pointer-events:all}
+		.spotlight .autoplay-button:hover{transform:scale(1.02);background:${playbuttonColor};box-shadow:0 6px 20px rgba(0,0,0,0.5)}
+		.spotlight .autoplay-button svg{width:24px;height:24px;fill:#fff;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.3));transition:filter .3s ease}
+		.spotlight .autoplay-button:hover svg{filter:drop-shadow(0 3px 6px rgba(0,0,0,0.5))}
         @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
         @media(max-width:768px),(orientation:portrait){.spotlight .refresh-button{bottom:calc(1rem + 100px + 1rem);right:1rem}}
         .spotlight .arrow{position:absolute;top:50%;transform:translateY(-50%);z-index:20;border:none;color:#fff;cursor:pointer;opacity:.7;padding:0;background:none;transition:opacity .3s;display:flex;align-items:center;justify-content:center}
@@ -1398,8 +1403,11 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             .spotlight .banner-info{left:50%;transform:translateX(-50%);max-width:85%;align-items:center}
             .spotlight .banner-genres,.spotlight .banner-meta{justify-content:center}
             .spotlight .control{display:none}
-            .spotlight .pause-button{bottom:1rem;right:calc(1rem + 50px + 1rem)}
-            .spotlight .mute-button{bottom:1rem;right:1rem}
+            .spotlight .pause-button{display:none}
+            .spotlight .mute-button{display:none}
+			.spotlight .autoplay-button{display:none}
+			.spotlight .refresh-button{display:none}
+			.spotlight .play-button{display:none}
         }`;
         
         const s = document.createElement("style");
@@ -1848,7 +1856,8 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                 playerVars: {
                     autoplay: 0, mute: 1, controls: 0, disablekb: 1, fs: 0,
                     iv_load_policy: 3, rel: 0, loop: 0, modestbranding: 1,
-                    playsinline: 1, suggestedQuality: CONFIG.preferredVideoQuality
+                    playsinline: 1, suggestedQuality: CONFIG.preferredVideoQuality,
+					origin: window.location.origin
                 },
                 events: {
                     'onReady': (event) => {
@@ -2290,7 +2299,8 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                 playerVars: {
                     autoplay: 0, mute: 1, controls: 0, disablekb: 1, fs: 0,
                     iv_load_policy: 3, rel: 0, loop: 0, modestbranding: 1,
-                    playsinline: 1, suggestedQuality: CONFIG.preferredVideoQuality
+                    playsinline: 1, suggestedQuality: CONFIG.preferredVideoQuality,
+					origin: window.location.origin
                 },
                 events: {
                     'onReady': (event) => {
@@ -2636,6 +2646,120 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             if (reference?.parentNode) reference.parentNode.insertBefore(container, reference);
             else home.insertBefore(container, home.firstChild);
             
+			// Spotlight enhancements: dwell-time scroll-pause + autoplay toggle
+			(function() {
+				const DWELL_MS = 1500;
+				const STORAGE_KEY = 'spotlight-autoplay';
+				let autoplayEnabled = localStorage.getItem(STORAGE_KEY) !== 'off';
+				let dwellTimer = null;
+				let dwellMet = false;
+				let isVisible = false;
+
+				function pauseAllPlayers() {
+					Object.entries(STATE.videoPlayers || {}).forEach(([itemId, player]) => {
+						if (player?.pauseVideo) { player.pauseVideo(); stopSponsorBlockMonitoring(itemId); }
+						else if (player?.pause) player.pause();
+					});
+				}
+
+				function allowedToPlay() {
+					return autoplayEnabled && isVisible && dwellMet;
+				}
+
+				function resumeCurrentVideo() {
+					if (!allowedToPlay()) return;
+					const slider = STATE.currentSlider;
+					if (!slider) return;
+					const visibleItem = slider.children[STATE.currentSlideIndex];
+					if (!visibleItem || visibleItem.dataset.hasVideo !== 'true') return;
+					const itemId = visibleItem.dataset.itemId;
+					if (itemId && STATE.videoPlayers[itemId]) {
+						playCurrentSlideVideo(itemId);
+					}
+				}
+
+				function startDwellTimer() {
+					if (dwellTimer || dwellMet || !isVisible || !autoplayEnabled) return;
+					dwellTimer = setTimeout(() => {
+						dwellMet = true;
+						dwellTimer = null;
+						resumeCurrentVideo();
+					}, DWELL_MS);
+				}
+
+				function cancelDwell() {
+					if (dwellTimer) { clearTimeout(dwellTimer); dwellTimer = null; }
+					dwellMet = false;
+				}
+
+				// IntersectionObserver – Track Visibility
+				const scrollObserver = new IntersectionObserver((entries) => {
+					entries.forEach(entry => {
+						if (entry.intersectionRatio >= 0.5) {
+							isVisible = true;
+							startDwellTimer();
+						} else {
+							isVisible = false;
+							cancelDwell();
+							pauseAllPlayers();
+						}
+					});
+				}, { threshold: [0, 0.1, 0.5, 0.9, 1.0] });
+				scrollObserver.observe(container);
+
+				// Enforcement-Interval
+				const enforcementInterval = setInterval(() => {
+					if (!allowedToPlay() && Object.keys(STATE.videoPlayers || {}).length > 0) {
+						pauseAllPlayers();
+					}
+				}, 250);
+
+				// Store Ref for Cleanup on View Change
+				STATE._spotlightScrollObserver = scrollObserver;
+				STATE._spotlightEnforcementInterval = enforcementInterval;
+
+				// Insert button
+				function addAutoplayButton() {
+					if (!container) return;
+					const spotlightEl = container.querySelector('.spotlight');
+					if (!spotlightEl) return;
+					if (spotlightEl.querySelector('.autoplay-button')) return;
+
+					const btn = document.createElement('button');
+					btn.className = 'autoplay-button visible';
+					btn.setAttribute('aria-label', 'Toggle Autoplay');
+
+					const render = () => {
+						btn.setAttribute('aria-pressed', String(autoplayEnabled));
+						btn.title = autoplayEnabled ? 'Autoplay: An' : 'Autoplay: Aus';
+						btn.innerHTML = autoplayEnabled
+							// Autoplay enabled
+							? '<svg viewBox="0 0 24 24"><path d="M11.2 3L3 21h2.2l2.1-5.2h9.4L18.8 21H21L12.8 3h-1.6zm.8 4.6L15.1 14H8.9l3.1-6.4z"/></svg>'
+							// Autoplay disabled
+							: '<svg viewBox="0 0 24 24"><path d="M11.2 3L3 21h2.2l2.1-5.2h9.4L18.8 21H21L12.8 3h-1.6zm.8 4.6L15.1 14H8.9l3.1-6.4z"/><line x1="3" y1="21" x2="21" y2="3" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>';
+					};
+					render();
+
+					btn.addEventListener('click', (e) => {
+						e.stopPropagation();
+						e.preventDefault();
+						autoplayEnabled = !autoplayEnabled;
+						localStorage.setItem(STORAGE_KEY, autoplayEnabled ? 'on' : 'off');
+						render();
+						if (!autoplayEnabled) {
+							cancelDwell();
+							pauseAllPlayers();
+						} else if (isVisible) {
+							startDwellTimer();
+						}
+					});
+
+					spotlightEl.appendChild(btn);
+				}
+
+				[50, 200, 600, 1500, 3000].forEach(ms => setTimeout(addAutoplayButton, ms));
+			})();
+			
             // Attach behavior (which will lazily enrich slides)
             attachSliderBehavior(
                 { slider, itemsCount: items.length, btnLeft, btnRight, controls, spotlight, pauseButton, muteButton, refreshButton },
@@ -2664,7 +2788,18 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             if (!homeVisible && initialized) {
                 initialized = false;
                 STATE.isInitializing = false;
+
+				// Clean up IIFE-Resources (Observer + Interval)
+				if (STATE._spotlightScrollObserver) {
+					STATE._spotlightScrollObserver.disconnect();
+					STATE._spotlightScrollObserver = null;
+				}
+				if (STATE._spotlightEnforcementInterval) {
+					clearInterval(STATE._spotlightEnforcementInterval);
+					STATE._spotlightEnforcementInterval = null;
+				}
                 
+				// Regular Clean up 
                 Object.entries(STATE.videoPlayers).forEach(([itemId, player]) => {
                     stopSponsorBlockMonitoring(itemId);
                     if (player?.stopVideo) player.stopVideo();
