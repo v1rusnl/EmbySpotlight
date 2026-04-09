@@ -2472,6 +2472,8 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 			STATE.currentSlideIndex = currentIndex;
 
 			enrichNearbySlides(currentIndex, slider, items, itemsCount);
+			
+			if (STATE.autoplayEnabled === false) return;
 
 			const visibleItem = slider.children[currentIndex];
 			const hasVideo = visibleItem?.dataset.hasVideo === 'true';
@@ -2585,17 +2587,25 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         });
         
         let autoplayTimer = null;
-        function startAutoplay() {
-            if (autoplayTimer) clearInterval(autoplayTimer);
-            const currentItem = slider.children[currentIndex];
-            if (CONFIG.waitForTrailerToEnd && currentItem?.dataset.hasVideo === 'true') return;
-            autoplayTimer = setInterval(() => { currentIndex++; animate(); }, CONFIG.autoplayInterval);
-        }
+		function startAutoplay() {
+			if (autoplayTimer) clearInterval(autoplayTimer);
+			const currentItem = slider.children[currentIndex];
+			if (CONFIG.waitForTrailerToEnd && currentItem?.dataset.hasVideo === 'true'
+				&& STATE.autoplayEnabled !== false) return;
+			autoplayTimer = setInterval(() => { currentIndex++; animate(); }, CONFIG.autoplayInterval);
+		}
         function stopAutoplay() { if (autoplayTimer) clearInterval(autoplayTimer); autoplayTimer = null; }
         
         spotlight.addEventListener("mouseenter", stopAutoplay);
         spotlight.addEventListener("mouseleave", startAutoplay);
         startAutoplay();
+		
+		document.addEventListener('spotlight-autoplay-toggled', () => {
+			if (STATE.autoplayEnabled) {
+				handleVideoPlayback();
+			}
+			startAutoplay();
+		});
         
         state.cleanup = () => { window.removeEventListener("resize", resizeHandler); stopAutoplay(); };
     }
@@ -2651,14 +2661,28 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 				const DWELL_MS = 1500;
 				const STORAGE_KEY = 'spotlight-autoplay';
 				let autoplayEnabled = localStorage.getItem(STORAGE_KEY) !== 'off';
+				STATE.autoplayEnabled = autoplayEnabled; 
 				let dwellTimer = null;
 				let dwellMet = false;
 				let isVisible = false;
 
 				function pauseAllPlayers() {
 					Object.entries(STATE.videoPlayers || {}).forEach(([itemId, player]) => {
-						if (player?.pauseVideo) { player.pauseVideo(); stopSponsorBlockMonitoring(itemId); }
-						else if (player?.pause) player.pause();
+						if (player?.pauseVideo) {
+							player.pauseVideo();
+							stopSponsorBlockMonitoring(itemId);
+
+							const containerId = player._containerId || player._playerId || `yt-player-${itemId}`;
+							const ytContainer = document.getElementById(containerId);
+							if (ytContainer) {
+								ytContainer.classList.remove('video-ready');
+								const wrapper = ytContainer.closest('.video-backdrop-wrapper');
+								const placeholder = wrapper?.querySelector('.video-placeholder');
+								if (placeholder) placeholder.classList.remove('hidden');
+							}
+						} else if (player?.pause) {
+							player.pause();
+						}
 					});
 				}
 
@@ -2744,6 +2768,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 						e.stopPropagation();
 						e.preventDefault();
 						autoplayEnabled = !autoplayEnabled;
+						STATE.autoplayEnabled = autoplayEnabled;   // ← NEU
 						localStorage.setItem(STORAGE_KEY, autoplayEnabled ? 'on' : 'off');
 						render();
 						if (!autoplayEnabled) {
@@ -2752,6 +2777,8 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 						} else if (isVisible) {
 							startDwellTimer();
 						}
+						// Slider-Intervall + Video-Setup über Event synchronisieren
+						document.dispatchEvent(new CustomEvent('spotlight-autoplay-toggled'));  // ← NEU
 					});
 
 					spotlightEl.appendChild(btn);
