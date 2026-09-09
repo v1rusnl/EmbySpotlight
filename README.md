@@ -8,7 +8,7 @@ A Spotlight banner for Emby Media Server
 
 ### First and foremost:
 - This is vibe-coded with the help of Claude Sonnet 4.5 and just a proof of concept
-- Tested with stable Server 4.9.X.X on a 1080p-Screen
+- Tested with stable Server 4.9.X.X and 4.10.X.X on a 1080p-Screen
 - This Banner just works on the Web Client
 - Big thanks to @Druidblack for the ratings codebase (https://github.com/Druidblack/jellyfin_ratings)
 
