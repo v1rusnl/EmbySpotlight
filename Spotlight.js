@@ -1,5 +1,5 @@
 /*!
- * Spotlight.js — Emby 4.9 compatible Spotlight slider with Video Backdrop Support & Custom Ratings
+ * Spotlight.js — Emby 4.10 compatible Spotlight slider with Video Backdrop Support & Custom Ratings
  * Enhanced with: YouTube Trailers, HTML5 Video, SponsorBlock, Custom Ratings (IMDb, RT, Metacritic, etc.), Oscar + Emmy + Globes + BAFTA + Razzies + Cannes + Berlinale + Venice Wins+Nominations
  * localStorage-based caching for all ratings
  * RT Scraping for Certified Fresh & Verified Hot badges
@@ -365,6 +365,10 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
     ];
 
     const STATE = {
+        generation: 0,
+        timeouts: new Set(),
+        cleanups: [],
+        emptyHome: null,
         videoPlayers: {},
         isMuted: CONFIG.startMuted,
         isPaused: false,
@@ -386,43 +390,61 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
     
     const SPOTLIGHT_CONTAINER_ID = 'emby-spotlight-slider-container';
     
-    const homeContainerSelectors = [
-        ".view:not(.hide) .homeSectionsContainer",
-        ".view:not(.hide) .view-home-home",
-        ".view-home-home",
-        ".view-home",
-        ".homeSectionsContainer",
-        ".homeView",
-        ".view[data-view='home'] .homeSectionsContainer",
-        ".view[data-view='home']"
-    ];
-    
     function findHomeContainer() {
-        for (const s of homeContainerSelectors) {
-            const el = document.querySelector(s);
-            if (el) return el;
-        }
-        return document.querySelector(".view:not(.hide)");
+        return Array.from(document.querySelectorAll('.homeSectionsContainer')).find(el =>
+            el.isConnected && !el.closest('.page-hidden, .hide') && el.getClientRects().length > 0
+        ) || null;
     }
-    
+
     function safeRequire(modules) {
-        return new Promise((resolve) => {
+        return new Promise(resolve => {
+            const timeout = setTimeout(() => resolve([]), 10000);
+            const finish = values => { clearTimeout(timeout); resolve(values); };
             try {
-                if (typeof window.require === "function") {
-                    window.require(modules, function () {
-                        resolve(Array.prototype.slice.call(arguments));
-                    });
-                } else if (typeof require === "function") {
-                    resolve([require.apply(null, modules)]);
-                } else {
-                    resolve([]);
-                }
-            } catch (e) {
-                resolve([]);
-            }
+                if (typeof window.require !== 'function') return finish([]);
+                const pending = window.require(modules, (...values) => finish(values.map(v => v?.default || v)), () => finish([]));
+                if (pending?.catch) pending.catch(() => finish([]));
+            } catch { finish([]); }
         });
     }
-    
+
+    function scheduleWidget(callback, delay) {
+        const generation = STATE.generation;
+        const id = setTimeout(() => {
+            STATE.timeouts.delete(id);
+            if (generation === STATE.generation) callback();
+        }, delay);
+        STATE.timeouts.add(id);
+        return id;
+    }
+
+    function destroySpotlight() {
+        STATE.generation++;
+        STATE.timeouts.forEach(clearTimeout);
+        STATE.timeouts.clear();
+        STATE.cleanups.splice(0).forEach(cleanup => cleanup());
+        STATE.currentSlider = null;
+        Object.keys(STATE.skipIntervals).forEach(stopSponsorBlockMonitoring);
+        Object.values(STATE.videoPlayers).forEach(player => {
+            try {
+                if (player?.destroy) player.destroy();
+                else if (player?.pause) {
+                    player.pause();
+                    player.removeAttribute('src');
+                    player.load();
+                }
+            } catch (error) { console.debug('[Spotlight] Player cleanup:', error); }
+        });
+        STATE.videoPlayers = {};
+        STATE.sponsorBlockSegments = {};
+        STATE.videoReadyStates = {};
+        STATE.enrichedSlides.clear();
+        STATE.sliderItems = [];
+        STATE.enrichmentPromises = {};
+        STATE.emptyHome = null;
+        document.getElementById(SPOTLIGHT_CONTAINER_ID)?.remove();
+    }
+
     function parseColor(color) {
         if (!color) return { r: 0, g: 0, b: 0, a: 1 };
         color = color.trim();
@@ -1258,10 +1280,8 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
     function getTrailerUrl(item, apiClient) {
         if (item.RemoteTrailers && item.RemoteTrailers.length > 0) {
             const url = item.RemoteTrailers[0].Url;
-            if (!url || url.trim() === '') return null;
-            const videoId = extractYouTubeVideoId(url);
-            if (!videoId) return null;
-            return { url, videoId, isYouTube: true };
+            const videoId = url && extractYouTubeVideoId(url);
+            if (videoId) return { url, videoId, isYouTube: true };
         }
         if (item.LocalTrailerIds && item.LocalTrailerIds.length > 0) {
             const trailerId = item.LocalTrailerIds[0];
@@ -1688,6 +1708,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
      * Prevents duplicate enrichment via STATE.enrichedSlides.
      */
     function enrichSlide(slideIndex, slider, items) {
+        if (STATE.currentSlider !== slider) return;
         const slide = slider.children[slideIndex];
         if (!slide) return;
         
@@ -1722,7 +1743,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         const nextIndex = currentIndex + 1 <= itemsCount + 1 ? currentIndex + 1 : 1;
         
         // Delay neighbor enrichment slightly to prioritize current slide
-        setTimeout(() => {
+        scheduleWidget(() => {
             enrichSlide(nextIndex, slider, items);
             enrichSlide(prevIndex, slider, items);
         }, 200);
@@ -1807,23 +1828,27 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         return infoContainer;
     }
 
-    function createImageBackdrop(item, apiClient) {
+    function createImageBackdrop(item, apiClient, isFirst = false) {
         const img = document.createElement("img");
         img.className = "banner-cover";
         img.draggable = false;
         img.alt = item.Name || "";
-        img.loading = "eager";
+        img.loading = isFirst ? "eager" : "lazy";
         img.decoding = "async";
+        if (isFirst) img.fetchPriority = "high";
+        img.width = 1920;
+        img.height = 1080;
         img.src = getImageUrl(apiClient, item, { width: CONFIG.imageWidth, prefer: "Backdrop" });
         return img;
     }
     
     async function createYouTubeBackdrop(item, videoId, apiClient, loadSponsorBlockNow = false) {
+        const generation = STATE.generation;
         if (!videoId) return createImageBackdrop(item, apiClient);
         
         if (CONFIG.enableSponsorBlock) {
             const sbPromise = fetchSponsorBlockSegments(videoId).then(segments => {
-                if (segments.length > 0) STATE.sponsorBlockSegments[videoId] = segments;
+                if (generation === STATE.generation && segments.length > 0) STATE.sponsorBlockSegments[videoId] = segments;
             });
             if (loadSponsorBlockNow) await sbPromise;
         }
@@ -1837,6 +1862,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         placeholder.className = "banner-cover video-placeholder";
         placeholder.draggable = false;
         placeholder.alt = item.Name || "";
+        placeholder.decoding = "async";                                        // [OPT]
         placeholder.src = getImageUrl(apiClient, item, { width: CONFIG.imageWidth, prefer: "Backdrop" });
         
         const container = document.createElement("div");
@@ -1849,18 +1875,21 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         wrapper.appendChild(container);
         
         await loadYouTubeIframeAPI();
+        if (generation !== STATE.generation) return null;
         
-        setTimeout(() => {
+        scheduleWidget(() => {
+            if (!wrapper.isConnected || generation !== STATE.generation) return;
             const player = new YT.Player(containerId, {
                 height: '100%', width: '100%', videoId,
                 playerVars: {
                     autoplay: 0, mute: 1, controls: 0, disablekb: 1, fs: 0,
                     iv_load_policy: 3, rel: 0, loop: 0, modestbranding: 1,
                     playsinline: 1, suggestedQuality: CONFIG.preferredVideoQuality,
-					origin: window.location.origin
+                    origin: window.location.origin
                 },
                 events: {
                     'onReady': (event) => {
+                        if (generation !== STATE.generation || !wrapper.isConnected) { event.target.destroy(); return; }
                         event.target._videoId = videoId;
                         event.target._itemId = item.Id;
                         event.target._containerId = containerId;
@@ -1870,15 +1899,16 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                         
                         const bannerItem = container.closest('.banner-item');
                         const sl = container.closest('.banner-slider');
-                        if (sl && bannerItem === sl.children[1]) {
-                            setTimeout(() => playCurrentSlideVideo(item.Id), 800);
+                        if (sl && bannerItem === sl.children[STATE.currentSlideIndex]) {
+                            scheduleWidget(() => playCurrentSlideVideo(item.Id), 800);
                         }
                     },
                     'onStateChange': (event) => {
-                        handleYouTubeStateChange(event, item, videoId, containerId);
+                        if (generation === STATE.generation && wrapper.isConnected) handleYouTubeStateChange(event, item, videoId, containerId);
                     }
                 }
             });
+            STATE.videoPlayers[item.Id] = player;
         }, 100);
         
         return wrapper;
@@ -1898,12 +1928,12 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             const currentPlaceholder = wrapper?.querySelector('.video-placeholder');
             
             if (currentPlaceholder && !currentPlaceholder.classList.contains('hidden')) {
-                setTimeout(() => {
+                scheduleWidget(() => {
                     ytContainer.classList.add('video-ready');
-                    setTimeout(() => currentPlaceholder.classList.add('hidden'), 300);
-                }, 500);
+                    scheduleWidget(() => currentPlaceholder.classList.add('hidden'), 300);
+                }, 3700);
             } else {
-                ytContainer.classList.add('video-ready');
+                scheduleWidget(() => ytContainer.classList.add('video-ready'), 3700);
             }
         } else if (playerState === YT.PlayerState.PAUSED) {
             STATE.isPaused = true;
@@ -1919,7 +1949,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             if (ytContainer) ytContainer.classList.remove('video-ready');
             
             if (CONFIG.waitForTrailerToEnd) {
-                setTimeout(() => {
+                scheduleWidget(() => {
                     const rightArrow = document.querySelector('.spotlight .arrow.right');
                     if (rightArrow) rightArrow.click();
                 }, 500);
@@ -1942,7 +1972,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         video.addEventListener('pause', () => { STATE.isPaused = true; updatePauseButtonIcon(); });
         video.addEventListener('ended', () => {
             if (CONFIG.waitForTrailerToEnd) {
-                setTimeout(() => {
+                scheduleWidget(() => {
                     const rightArrow = document.querySelector('.spotlight .arrow.right');
                     if (rightArrow) rightArrow.click();
                 }, 500);
@@ -1957,32 +1987,34 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
      * Creates banner element SYNCHRONOUSLY for fast initial render.
      * Video setup is deferred. Ratings/Awards loaded lazily.
      */
-    function createBannerElementSync(item, apiClient) {
+    function createBannerElementSync(item, apiClient, index = 0) {
         const div = document.createElement("div");
         div.className = "banner-item";
         
         // Always start with image backdrop (fast)
-        const backdropElement = createImageBackdrop(item, apiClient);
+        const backdropElement = createImageBackdrop(item, apiClient, index === 0);
         div.appendChild(backdropElement);
         
         // Check if video should be loaded later
         const trailerData = getTrailerUrl(item, apiClient);
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-        const shouldPlayVideo = CONFIG.enableVideoBackdrop && trailerData?.videoId && (!isMobile || CONFIG.enableMobileVideo);
+        const shouldPlayVideo = CONFIG.enableVideoBackdrop && (trailerData?.url || item.LocalTrailerCount > 0) && (!isMobile || CONFIG.enableMobileVideo);
         div.dataset.hasVideo = shouldPlayVideo ? 'true' : 'false';
         div.dataset.videoSetup = 'false';
         if (shouldPlayVideo) {
-            div.dataset.trailerIsYouTube = trailerData.isYouTube ? 'true' : 'false';
-            div.dataset.trailerVideoId = trailerData.videoId || '';
-            div.dataset.trailerUrl = trailerData.url || '';
+            div.dataset.trailerIsYouTube = trailerData?.isYouTube ? 'true' : 'false';
+            div.dataset.trailerVideoId = trailerData?.videoId || '';
+            div.dataset.trailerUrl = trailerData?.url || '';
         }
         
-        // Vignettes
+        // [OPT] Vignettes in DocumentFragment sammeln — 1 Reflow statt 4
+        const vignetteFrag = document.createDocumentFragment();
         ['banner-gradient-left', 'banner-gradient-right', 'banner-vignette-top', 'banner-vignette-bottom'].forEach(cls => {
             const el = document.createElement("div");
             el.className = cls;
-            div.appendChild(el);
+            vignetteFrag.appendChild(el);
         });
+        div.appendChild(vignetteFrag);
         
         // Logo or Title
         const logoUrl = getLogoUrl(apiClient, item);
@@ -1992,6 +2024,8 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             logo.src = logoUrl;
             logo.alt = (item.Name || "") + " Logo";
             logo.draggable = false;
+            logo.loading = index === 0 ? "eager" : "lazy";  // [OPT] Logos außer erstem lazy
+            logo.decoding = "async";                          // [OPT]
             div.appendChild(logo);
         } else {
             const title = document.createElement("div");
@@ -2019,9 +2053,22 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         
         bannerItem.dataset.videoSetup = 'true';
         
+        const generation = STATE.generation;
         const isYouTube = bannerItem.dataset.trailerIsYouTube === 'true';
         const videoId = bannerItem.dataset.trailerVideoId;
-        const trailerUrl = bannerItem.dataset.trailerUrl;
+        let trailerUrl = bannerItem.dataset.trailerUrl;
+        if (!trailerUrl && item.LocalTrailerCount > 0) {
+            try {
+                const trailers = await apiClient.getLocalTrailers(apiClient.getCurrentUserId(), item.Id);
+                if (generation !== STATE.generation || !bannerItem.isConnected) return;
+                if (trailers[0]?.Id) trailerUrl = apiClient.getUrl('Videos/' + trailers[0].Id + '/stream', { static: true, api_key: apiClient.accessToken() });
+            } catch (error) { console.debug('[Spotlight] Local trailer unavailable:', error); }
+        }
+        if (generation !== STATE.generation || !bannerItem.isConnected) return;
+        if (!trailerUrl) {
+            bannerItem.dataset.hasVideo = 'false';
+            return;
+        }
         
         // Keep existing image as fallback
         const existingImg = bannerItem.querySelector('.banner-cover:not(.video-backdrop)');
@@ -2033,6 +2080,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             videoElement = createHTML5VideoBackdrop(item, trailerUrl);
         }
         
+        if (generation !== STATE.generation || !bannerItem.isConnected) return;
         if (videoElement && existingImg) {
             existingImg.parentNode.insertBefore(videoElement, existingImg);
             // Keep image as placeholder for YouTube
@@ -2043,7 +2091,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             }
         }
     }
-    
+
     function buildSliderSync(items, apiClient) {
         const container = document.createElement("div");
         container.className = "spotlight-container";
@@ -2142,38 +2190,23 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         return { container, spotlight, slider, btnLeft, btnRight, controls, sliderWrapper, playButtonOverlay, pauseButton, muteButton, refreshButton };
     }
     
-    function playItem(itemId, serverId, apiClient) {
-        let serverIdToUse = serverId;
-        if (!serverIdToUse && apiClient) {
-            serverIdToUse = apiClient.serverId || apiClient.serverInfo?.Id || apiClient._serverInfo?.Id;
-        }
-        if (window.require) {
-            try {
-                window.require(['playbackManager'], function(playbackManager) {
-                    if (playbackManager?.play) {
-                        playbackManager.play({ ids: [itemId], serverId: serverIdToUse });
-                    }
-                });
-                return;
-            } catch (e) { }
-        }
-        if (window.appRouter?.showItem) {
-            window.appRouter.showItem(itemId, serverIdToUse);
-            setTimeout(() => { const pb = document.querySelector('.btnPlay'); if (pb) pb.click(); }, 500);
-        }
+    async function playItem(itemId, serverId, apiClient) {
+        const serverIdToUse = serverId || apiClient?.serverId();
+        const [playbackManager] = await safeRequire(['playbackManager']);
+        if (!playbackManager?.play) return navigateToItem(itemId, serverIdToUse, apiClient);
+        try { await playbackManager.play({ ids: [itemId], serverId: serverIdToUse }); }
+        catch (error) { console.error('[Spotlight] Playback failed:', error); }
     }
-    
-    function navigateToItem(itemId, serverId, apiClient) {
-        let serverIdToUse = serverId;
-        if (!serverIdToUse && apiClient) {
-            serverIdToUse = apiClient.serverId || apiClient.serverInfo?.Id || apiClient._serverInfo?.Id;
+
+    async function navigateToItem(itemId, serverId, apiClient) {
+        const serverIdToUse = serverId || apiClient?.serverId();
+        const [router] = await safeRequire(['appRouter']);
+        if (router?.showItem) {
+            try { await router.showItem(itemId, serverIdToUse); return; }
+            catch (error) { console.error('[Spotlight] Navigation failed:', error); }
         }
-        if (window.appRouter?.showItem) { window.appRouter.showItem(itemId, serverIdToUse); return; }
-        if (window.Dashboard?.navigate) { window.Dashboard.navigate(serverIdToUse ? `item?id=${itemId}&serverId=${serverIdToUse}` : `item?id=${itemId}`); return; }
-        if (typeof require === "function") {
-            try { require(['appRouter'], function(r) { if (r?.showItem) r.showItem(itemId, serverIdToUse); }); return; } catch (e) { }
-        }
-        window.location.hash = serverIdToUse ? `#!/item?id=${itemId}&serverId=${serverIdToUse}` : `#!/item?id=${itemId}`;
+        window.location.hash = '#!/item?id=' + encodeURIComponent(itemId) +
+            (serverIdToUse ? '&serverId=' + encodeURIComponent(serverIdToUse) : '');
     }
 
     function logYouTubeURL(videoId, itemName) {
@@ -2300,7 +2333,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                     autoplay: 0, mute: 1, controls: 0, disablekb: 1, fs: 0,
                     iv_load_policy: 3, rel: 0, loop: 0, modestbranding: 1,
                     playsinline: 1, suggestedQuality: CONFIG.preferredVideoQuality,
-					origin: window.location.origin
+                    origin: window.location.origin
                 },
                 events: {
                     'onReady': (event) => {
@@ -2314,8 +2347,8 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                         
                         const bannerItem = container.closest('.banner-item');
                         const sl = container.closest('.banner-slider');
-                        if (sl && bannerItem === sl.children[1]) {
-                            setTimeout(() => playCurrentSlideVideo(itemId), 500);
+                        if (sl && bannerItem === sl.children[STATE.currentSlideIndex]) {
+                            scheduleWidget(() => playCurrentSlideVideo(itemId), 500);
                         }
                     },
                     'onStateChange': (event) => {
@@ -2344,30 +2377,26 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         return null;
     }
     
-    async function refreshSlideshow(apiClient, oldContainer) {
-        pauseAllVideos();
-        Object.keys(STATE.skipIntervals).forEach(id => stopSponsorBlockMonitoring(id));
-        Object.values(STATE.videoPlayers).forEach(p => { if (p?.destroy) p.destroy(); });
-        STATE.videoPlayers = {};
-        STATE.sponsorBlockSegments = {};
-        STATE.ratingsCache = {};
-        STATE.videoReadyStates = {};
-        STATE.currentSlider = null;
-        STATE.enrichedSlides = new Set();
-        STATE.sliderItems = [];
-        STATE.enrichmentPromises = {};
-        if (oldContainer) oldContainer.remove();
-        try { sessionStorage.removeItem('spotlight-current-index'); } catch (e) {}
-        STATE.isInitializing = false;
+    async function refreshSlideshow() {
+        destroySpotlight();
+        try { sessionStorage.removeItem('spotlight-current-index'); } catch {}
         await init();
     }
-    
+
     function attachSliderBehavior(state, apiClient, items) {
         const { slider, itemsCount, btnLeft, btnRight, controls, spotlight, pauseButton, muteButton, refreshButton } = state;
-        let currentIndex = 1;
+        let currentIndex = itemsCount > 1 ? 1 : 0;
+        STATE.currentSlideIndex = currentIndex;
+        btnLeft.disabled = btnRight.disabled = itemsCount < 2;
+        btnLeft.style.display = btnRight.style.display = itemsCount < 2 ? 'none' : '';
         
         STATE.currentSlider = slider;
         STATE.sliderItems = items;
+
+        // [OPT] Wrapper-Breite cachen — vorher wurde bei jedem updateTransform()
+        // getBoundingClientRect() aufgerufen → Layout-Thrash. Jetzt: nur bei resize neu messen.
+        const wrapperEl = spotlight.querySelector('.banner-slider-wrapper');
+        let cachedWidth = wrapperEl.getBoundingClientRect().width;
         
         function triggerZoomAnimation() {
             const visibleItem = slider.children[currentIndex];
@@ -2382,16 +2411,15 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         }
         
         function updateTransform(index, animate = true) {
-            const width = spotlight.querySelector('.banner-slider-wrapper').getBoundingClientRect().width;
             slider.style.transition = animate ? "transform .5s ease" : "none";
-            slider.style.transform = `translate3d(${Math.round(-(index * width))}px, 0, 0)`;
+            slider.style.transform = `translate3d(${Math.round(-(index * cachedWidth))}px, 0, 0)`;
             void slider.offsetHeight;
         }
         
         function setActiveDot(idx) {
             const dots = controls.querySelectorAll(".control");
             dots.forEach(d => d.classList.remove("active"));
-            const realIndex = ((idx - 1 + itemsCount) % itemsCount);
+            const realIndex = itemsCount > 1 ? ((idx - 1 + itemsCount) % itemsCount) : 0;
             if (dots[realIndex]) dots[realIndex].classList.add("active");
         }
         
@@ -2405,51 +2433,62 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
                 pauseButton.classList.remove('visible');
             }
         }
-        
-        const resizeHandler = () => updateTransform(currentIndex, false);
-        window.addEventListener("resize", resizeHandler);
+
+        // [OPT] Resize gedebounced + Breite neu cachen
+        let resizeRaf = null;
+        const resizeHandler = () => {
+            if (resizeRaf) cancelAnimationFrame(resizeRaf);
+            resizeRaf = requestAnimationFrame(() => {
+                cachedWidth = wrapperEl.getBoundingClientRect().width;
+                updateTransform(currentIndex, false);
+                resizeRaf = null;
+            });
+        };
+        window.addEventListener("resize", resizeHandler, { passive: true });
         
         // Initial setup
-		setTimeout(() => {
-			updateTransform(currentIndex, false);
-			setActiveDot(currentIndex);
-			triggerZoomAnimation();
-			updateVideoButtonsVisibility();
-			STATE.currentSlideIndex = currentIndex;
+        scheduleWidget(() => {
+            updateTransform(currentIndex, false);
+            setActiveDot(currentIndex);
+            triggerZoomAnimation();
+            updateVideoButtonsVisibility();
+            STATE.currentSlideIndex = currentIndex;
 
-			enrichNearbySlides(currentIndex, slider, items, itemsCount);
+            enrichNearbySlides(currentIndex, slider, items, itemsCount);
 
-			const firstItem = slider.children[currentIndex];
-			if (firstItem?.dataset.hasVideo === 'true') {
-				const itemId = firstItem.dataset.itemId;
-				const item = items.find(it => it.Id === itemId);
-				if (item) {
-					setupVideoForSlide(firstItem, item, apiClient, true).then(() => {
-						
-						const tryPlay = (attempts = 0) => {
-							const player = STATE.videoPlayers[itemId];
-							if (!player && attempts < 40) {
-								setTimeout(() => tryPlay(attempts + 1), 300);
-								return;
-							}
-							if (player?.getPlayerState) {
-								const s = player.getPlayerState();
-								if (s === YT.PlayerState.UNSTARTED || s === YT.PlayerState.CUED) {
-									setTimeout(() => playCurrentSlideVideo(itemId), 800);
-								} else if (s === -1 && attempts < 40) {
-									setTimeout(() => tryPlay(attempts + 1), 300);
-								} else if (s !== -1) {
-									playCurrentSlideVideo(itemId);
-								}
-							} else if (player?.tagName === 'VIDEO') {
-								playCurrentSlideVideo(itemId);
-							}
-						};
-						setTimeout(() => tryPlay(), 1500);
-					});
-				}
-			}
-		}, 100);
+            const firstItem = slider.children[currentIndex];
+            if (firstItem?.dataset.hasVideo === 'true') {
+                const itemId = firstItem.dataset.itemId;
+                const item = items.find(it => it.Id === itemId);
+                if (item) {
+                    setupVideoForSlide(firstItem, item, apiClient, true).then(() => {
+                        if (STATE.currentSlider !== slider) return;
+                        if (firstItem.dataset.hasVideo !== 'true') { handleVideoPlayback(); return; }
+                        
+                        const tryPlay = (attempts = 0) => {
+                            const player = STATE.videoPlayers[itemId];
+                            if (!player && attempts < 40) {
+                                scheduleWidget(() => tryPlay(attempts + 1), 300);
+                                return;
+                            }
+                            if (player?.getPlayerState) {
+                                const s = player.getPlayerState();
+                                if (s === YT.PlayerState.UNSTARTED || s === YT.PlayerState.CUED) {
+                                    scheduleWidget(() => playCurrentSlideVideo(itemId), 800);
+                                } else if (s === -1 && attempts < 40) {
+                                    scheduleWidget(() => tryPlay(attempts + 1), 300);
+                                } else if (s !== -1) {
+                                    playCurrentSlideVideo(itemId);
+                                }
+                            } else if (player?.tagName === 'VIDEO') {
+                                playCurrentSlideVideo(itemId);
+                            }
+                        };
+                        scheduleWidget(() => tryPlay(), 1500);
+                    });
+                }
+            }
+        }, 100);
         
         btnRight.addEventListener("click", (e) => { e.stopPropagation(); currentIndex++; animate(); });
         btnLeft.addEventListener("click", (e) => { e.stopPropagation(); currentIndex--; animate(); });
@@ -2457,86 +2496,89 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         controls.addEventListener("click", (e) => {
             e.stopPropagation();
             if (e.target.classList.contains("control")) {
-                currentIndex = parseInt(e.target.dataset.index, 10);
+                currentIndex = itemsCount > 1 ? parseInt(e.target.dataset.index, 10) : 0;
                 updateTransform(currentIndex, true);
                 setActiveDot(currentIndex);
-                setTimeout(() => { triggerZoomAnimation(); handleVideoPlayback(); }, 100);
+                scheduleWidget(() => { triggerZoomAnimation(); handleVideoPlayback(); }, 100);
             }
         });
         
-		function handleVideoPlayback() {
-			STATE.isPaused = false;
-			updatePauseButtonIcon();
-			pauseAllVideos();
-			updateVideoButtonsVisibility();
-			STATE.currentSlideIndex = currentIndex;
+        function handleVideoPlayback() {
+            STATE.isPaused = false;
+            updatePauseButtonIcon();
+            pauseAllVideos();
+            updateVideoButtonsVisibility();
+            STATE.currentSlideIndex = currentIndex;
 
-			enrichNearbySlides(currentIndex, slider, items, itemsCount);
-			
-			if (STATE.autoplayEnabled === false) return;
+            enrichNearbySlides(currentIndex, slider, items, itemsCount);
 
-			const visibleItem = slider.children[currentIndex];
-			const hasVideo = visibleItem?.dataset.hasVideo === 'true';
+            if (STATE.autoplayEnabled === false) return;
 
-			if (CONFIG.waitForTrailerToEnd && hasVideo) stopAutoplay();
-			else startAutoplay();
+            const visibleItem = slider.children[currentIndex];
+            const hasVideo = visibleItem?.dataset.hasVideo === 'true';
 
-			if (hasVideo) {
-				const itemId = visibleItem.dataset.itemId;
-				const item = items.find(it => it.Id === itemId);
-				
-				const savedIndex = currentIndex; 
-				const tryPlay = (attempts = 0) => {
-					if (STATE.currentSlideIndex !== savedIndex) return;
-					
-					const player = STATE.videoPlayers[itemId];
-					if (!player && attempts < 40) {
-						setTimeout(() => tryPlay(attempts + 1), 300);
-						return;
-					}
-					if (player?.getPlayerState) {
-						const s = player.getPlayerState();
-						if (s === YT.PlayerState.UNSTARTED || s === YT.PlayerState.CUED) {
-							setTimeout(() => playCurrentSlideVideo(itemId), 500);
-						} else if (s === -1 && attempts < 40) {
-							setTimeout(() => tryPlay(attempts + 1), 300);
-						} else if (s !== -1) {
-							playCurrentSlideVideo(itemId);
-						}
-					} else if (player?.tagName === 'VIDEO') {
-						playCurrentSlideVideo(itemId);
-					}
-				};
+            if (CONFIG.waitForTrailerToEnd && hasVideo) stopAutoplay();
+            else startAutoplay();
 
-				if (item && visibleItem.dataset.videoSetup !== 'true') {
-					setupVideoForSlide(visibleItem, item, apiClient, false).then(() => {
-						setTimeout(() => tryPlay(), 500);
-					});
-				} else {
-					ensurePlayerForCurrentSlide(currentIndex, slider);
-					setTimeout(() => tryPlay(), 300);
-				}
-			}
-		}
+            if (hasVideo) {
+                const itemId = visibleItem.dataset.itemId;
+                const item = items.find(it => it.Id === itemId);
+                
+                const savedIndex = currentIndex; 
+                const tryPlay = (attempts = 0) => {
+                    if (STATE.currentSlideIndex !== savedIndex) return;
+                    
+                    const player = STATE.videoPlayers[itemId];
+                    if (!player && attempts < 40) {
+                        scheduleWidget(() => tryPlay(attempts + 1), 300);
+                        return;
+                    }
+                    if (player?.getPlayerState) {
+                        const s = player.getPlayerState();
+                        if (s === YT.PlayerState.UNSTARTED || s === YT.PlayerState.CUED) {
+                            scheduleWidget(() => playCurrentSlideVideo(itemId), 500);
+                        } else if (s === -1 && attempts < 40) {
+                            scheduleWidget(() => tryPlay(attempts + 1), 300);
+                        } else if (s !== -1) {
+                            playCurrentSlideVideo(itemId);
+                        }
+                    } else if (player?.tagName === 'VIDEO') {
+                        playCurrentSlideVideo(itemId);
+                    }
+                };
+
+                if (item && visibleItem.dataset.videoSetup !== 'true') {
+                    setupVideoForSlide(visibleItem, item, apiClient, false).then(() => {
+                        if (STATE.currentSlider !== slider) return;
+                        if (visibleItem.dataset.hasVideo !== 'true') { handleVideoPlayback(); return; }
+                        scheduleWidget(() => tryPlay(), 500);
+                    });
+                } else {
+                    ensurePlayerForCurrentSlide(currentIndex, slider);
+                    scheduleWidget(() => tryPlay(), 300);
+                }
+            }
+        }
         
         function animate() {
+            if (itemsCount < 2 || STATE.currentSlider !== slider) return;
             pauseAllVideos();
             updateTransform(currentIndex, true);
             setActiveDot(currentIndex);
-            setTimeout(() => triggerZoomAnimation(), 100);
+            scheduleWidget(() => triggerZoomAnimation(), 100);
             
-            setTimeout(() => {
+            scheduleWidget(() => {
                 if (itemsCount < 2) { handleVideoPlayback(); return; }
                 if (currentIndex === 0) {
                     currentIndex = itemsCount;
                     updateTransform(currentIndex, false);
                     setActiveDot(currentIndex);
-                    setTimeout(() => triggerZoomAnimation(), 100);
+                    scheduleWidget(() => triggerZoomAnimation(), 100);
                 } else if (currentIndex === itemsCount + 1) {
                     currentIndex = 1;
                     updateTransform(currentIndex, false);
                     setActiveDot(currentIndex);
-                    setTimeout(() => triggerZoomAnimation(), 100);
+                    scheduleWidget(() => triggerZoomAnimation(), 100);
                 }
                 STATE.currentSlideIndex = currentIndex;
                 handleVideoPlayback();
@@ -2587,33 +2629,42 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
         });
         
         let autoplayTimer = null;
-		function startAutoplay() {
-			if (autoplayTimer) clearInterval(autoplayTimer);
-			const currentItem = slider.children[currentIndex];
-			if (CONFIG.waitForTrailerToEnd && currentItem?.dataset.hasVideo === 'true'
-				&& STATE.autoplayEnabled !== false) return;
-			autoplayTimer = setInterval(() => { currentIndex++; animate(); }, CONFIG.autoplayInterval);
-		}
+        function startAutoplay() {
+            stopAutoplay();
+            if (itemsCount < 2 || STATE.currentSlider !== slider) return;
+            const currentItem = slider.children[currentIndex];
+            if (CONFIG.waitForTrailerToEnd && currentItem?.dataset.hasVideo === 'true'
+                && STATE.autoplayEnabled !== false) return;
+            autoplayTimer = setInterval(() => { currentIndex++; animate(); }, CONFIG.autoplayInterval);
+        }
         function stopAutoplay() { if (autoplayTimer) clearInterval(autoplayTimer); autoplayTimer = null; }
         
         spotlight.addEventListener("mouseenter", stopAutoplay);
         spotlight.addEventListener("mouseleave", startAutoplay);
         startAutoplay();
-		
-		document.addEventListener('spotlight-autoplay-toggled', () => {
-			if (STATE.autoplayEnabled) {
-				handleVideoPlayback();
-			}
-			startAutoplay();
-		});
         
-        state.cleanup = () => { window.removeEventListener("resize", resizeHandler); stopAutoplay(); };
+        const onAutoplayToggled = () => {
+            if (STATE.autoplayEnabled) {
+                handleVideoPlayback();
+            }
+            startAutoplay();
+        };
+        document.addEventListener('spotlight-autoplay-toggled', onAutoplayToggled);
+        
+        STATE.cleanups.push(() => {
+            window.removeEventListener('resize', resizeHandler);
+            document.removeEventListener('spotlight-autoplay-toggled', onAutoplayToggled);
+            if (resizeRaf) cancelAnimationFrame(resizeRaf);
+            stopAutoplay();
+        });
     }
     
     // ══════════════════════════════════════════════════════════════════
     // Preload first slide images
     // ══════════════════════════════════════════════════════════════════
     
+    // [OPT] Default-Count von 3 → 2 reduziert. Der <img> im DOM lädt sowieso —
+    // zusätzliches new Image() ist nur für Slides 1+2 sinnvoll (nächster + aktueller).
     function preloadImages(items, apiClient, count = 3) {
         const toPreload = items.slice(0, count);
         toPreload.forEach(item => {
@@ -2623,25 +2674,23 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
     }
     
     async function init() {
+        if (document.getElementById(SPOTLIGHT_CONTAINER_ID) || STATE.isInitializing) return;
+        const generation = STATE.generation;
+        STATE.isInitializing = true;
         try {
-            if (document.getElementById(SPOTLIGHT_CONTAINER_ID) || STATE.isInitializing) return;
-            STATE.isInitializing = true;
             
             insertStyles();
             
             const home = findHomeContainer();
-            if (!home) { STATE.isInitializing = false; return; }
+            if (!home || STATE.emptyHome === home) return;
             
-            const [connectionManager, ApiClient] = await safeRequire(["connectionManager", "ApiClient"]);
-            
-            let apiClient = null;
-            try { if (connectionManager?.[0]?.currentApiClient) apiClient = connectionManager[0].currentApiClient(); } catch (e) { }
-            if (!apiClient) { try { if (ApiClient?.[0]?.serverAddress) apiClient = ApiClient[0]; } catch (e) { } }
-            if (!apiClient && window.ApiClient) apiClient = window.ApiClient;
+            const [connectionManager] = await safeRequire(['connectionManager']);
+            const apiClient = connectionManager?.currentApiClient?.() || window.ConnectionManager?.currentApiClient?.() || window.ApiClient;
             if (!apiClient) { STATE.isInitializing = false; return; }
             
             const items = await fetchItems(apiClient);
-            if (!items?.length) { STATE.isInitializing = false; return; }
+            if (generation !== STATE.generation || home !== findHomeContainer()) return;
+            if (!items?.length) { STATE.emptyHome = home; return; }
             
             console.log(`[Spotlight] ${items.length} items loaded`);
             
@@ -2651,6 +2700,8 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
             // Build slider SYNCHRONOUSLY (no await for ratings/awards)
             const { container, spotlight, slider, btnLeft, btnRight, controls, pauseButton, muteButton, refreshButton } = buildSliderSync(items, apiClient);
             
+            if (document.getElementById(SPOTLIGHT_CONTAINER_ID)) return;
+
             // Insert into DOM immediately
             const reference = home.querySelector?.(".homeSectionsContainer");
             if (reference?.parentNode) reference.parentNode.insertBefore(container, reference);
@@ -2687,7 +2738,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 				}
 
 				function allowedToPlay() {
-					return autoplayEnabled && isVisible && dwellMet;
+					return generation === STATE.generation && container.isConnected && autoplayEnabled && isVisible && dwellMet;
 				}
 
 				function resumeCurrentVideo() {
@@ -2704,7 +2755,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 
 				function startDwellTimer() {
 					if (dwellTimer || dwellMet || !isVisible || !autoplayEnabled) return;
-					dwellTimer = setTimeout(() => {
+					dwellTimer = scheduleWidget(() => {
 						dwellMet = true;
 						dwellTimer = null;
 						resumeCurrentVideo();
@@ -2739,8 +2790,11 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 				}, 250);
 
 				// Store Ref for Cleanup on View Change
-				STATE._spotlightScrollObserver = scrollObserver;
-				STATE._spotlightEnforcementInterval = enforcementInterval;
+				STATE.cleanups.push(() => {
+                    scrollObserver.disconnect();
+                    clearInterval(enforcementInterval);
+                    cancelDwell();
+                });
 
 				// Insert button
 				function addAutoplayButton() {
@@ -2784,7 +2838,7 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
 					spotlightEl.appendChild(btn);
 				}
 
-				[50, 200, 600, 1500, 3000].forEach(ms => setTimeout(addAutoplayButton, ms));
+				[50, 200, 600, 1500, 3000].forEach(ms => scheduleWidget(addAutoplayButton, ms));
 			})();
 			
             // Attach behavior (which will lazily enrich slides)
@@ -2802,60 +2856,36 @@ if (typeof GM_xmlhttpRequest === 'undefined') {
     }
     
     function observeViewAndInit() {
-        let initialized = false;
-        
-        const observer = new MutationObserver(() => {
-            const homeVisible = !!document.querySelector(".view:not(.hide) .homeSectionsContainer, .view:not(.hide) [data-view='home'], .view:not(.hide) .view-home-home");
-            
-            if (homeVisible && !initialized && !STATE.isInitializing) {
-                initialized = true;
-                setTimeout(() => init(), 300);
+        let home = null;
+        let pending = null;
+        function checkView() {
+            const visibleHome = findHomeContainer();
+            if (home !== visibleHome) {
+                if (pending) clearTimeout(pending);
+                pending = null;
+                destroySpotlight();
+                home = visibleHome;
             }
-            
-            if (!homeVisible && initialized) {
-                initialized = false;
-                STATE.isInitializing = false;
-
-				// Clean up IIFE-Resources (Observer + Interval)
-				if (STATE._spotlightScrollObserver) {
-					STATE._spotlightScrollObserver.disconnect();
-					STATE._spotlightScrollObserver = null;
-				}
-				if (STATE._spotlightEnforcementInterval) {
-					clearInterval(STATE._spotlightEnforcementInterval);
-					STATE._spotlightEnforcementInterval = null;
-				}
-                
-				// Regular Clean up 
-                Object.entries(STATE.videoPlayers).forEach(([itemId, player]) => {
-                    stopSponsorBlockMonitoring(itemId);
-                    if (player?.stopVideo) player.stopVideo();
-                    else if (player?.pauseVideo) player.pauseVideo();
-                    if (player?.destroy) player.destroy();
-                    else if (player?.tagName === 'VIDEO') { player.pause(); player.src = ''; player.load(); }
-                });
-                
-                STATE.videoPlayers = {};
-                STATE.sponsorBlockSegments = {};
-                STATE.ratingsCache = {};
-                STATE.videoReadyStates = {};
-                STATE.currentSlider = null;
-                STATE.enrichedSlides = new Set();
-                STATE.sliderItems = [];
-                STATE.enrichmentPromises = {};
-                
-                document.getElementById(SPOTLIGHT_CONTAINER_ID)?.remove();
+            if (home && STATE.emptyHome !== home && !STATE.isInitializing &&
+                !document.getElementById(SPOTLIGHT_CONTAINER_ID) && !pending) {
+                pending = setTimeout(async () => {
+                    pending = null;
+                    const generation = STATE.generation;
+                    if (home === findHomeContainer()) await init();
+                    if (generation !== STATE.generation) checkView();
+                }, 300);
             }
+        }
+        const observer = new MutationObserver(checkView);
+        observer.observe(document.body, {
+            childList: true, subtree: true, attributes: true,
+            attributeFilter: ['class', 'style']
         });
-        
-        observer.observe(document.body, { childList: true, subtree: true });
-        
-        setTimeout(() => {
-            if (!initialized && !STATE.isInitializing) {
-                if (document.querySelector(".view:not(.hide) .homeSectionsContainer, .view:not(.hide) [data-view='home']")) init();
-            }
-        }, 500);
+        document.addEventListener('viewshow', checkView);
+        document.addEventListener('viewhide', checkView);
+        checkView();
     }
-    
+
+
     observeViewAndInit();
 })();
